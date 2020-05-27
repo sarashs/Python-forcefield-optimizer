@@ -1,0 +1,6 @@
+.idea
+*.log
+*.pyc
+*.class
+*.o
+*.tmp
