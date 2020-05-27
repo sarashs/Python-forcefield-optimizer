@@ -1,0 +1,19 @@
+#structure Cl2_414 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -2.070092 Cl  0   0    0     2.07009#restrainbond 1 2 2000 2000 4.14#structure Cl2_Opt 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.028022 Cl  0   0    0     1.02802#restrainbond 1 2 2000 2000 2.056
+#structure Cl2_144 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -0.722 Cl  0   0    0     0.72#restrainbond 1 2 2000 2000 1.44
+#structure Cl2_154 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -0.770032 Cl  0   0    0     0.77003#restrainbond 1 2 2000 2000 1.54
+#structure Cl2_164 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -0.822 Cl  0   0    0     0.82#restrainbond 1 2 2000 2000 1.64
+#structure Cl2_174 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -0.872 Cl  0   0    0     0.87#restrainbond 1 2 2000 2000 1.74
+#structure Cl2_184 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -0.920092 Cl  0   0    0     0.92009#restrainbond 1 2 2000 2000 1.84
+#structure Cl2_194 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -0.970092 Cl  0   0    0     0.97009#restrainbond 1 2 2000 2000 1.94
+#structure Cl2_204 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.020092 Cl  0   0    0     1.02009#restrainbond 1 2 2000 2000 2.04
+#structure Cl2_214 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.070092 Cl  0   0    0     1.07009#restrainbond 1 2 2000 2000 2.14
+#structure Cl2_224 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.120092 Cl  0   0    0     1.12009#restrainbond 1 2 2000 2000 2.24
+#structure Cl2_234 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.170092 Cl  0   0    0     1.17009#restrainbond 1 2 2000 2000 2.34
+#structure Cl2_244 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.220092 Cl  0   0    0     1.22009#restrainbond 1 2 2000 2000 2.44
+#structure Cl2_254 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.270092 Cl  0   0    0     1.27009#restrainbond 1 2 2000 2000 2.54
+#structure Cl2_264 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.320092 Cl  0   0    0     1.32009#restrainbond 1 2 2000 2000 2.64
+#structure Cl2_274 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.370092 Cl  0   0    0     1.37009#restrainbond 1 2 2000 2000 2.74
+#structure Cl2_284 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.420092 Cl  0   0    0     1.42009#restrainbond 1 2 2000 2000 2.84
+#structure Cl2_294 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.470092 Cl  0   0    0     1.47009#restrainbond 1 2 2000 2000 2.94
+#structure Cl2_304 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.520092 Cl  0   0    0     1.52009#restrainbond 1 2 2000 2000 3.04
+#structure Cl2_314 2#weightsCl 35.453#dimensions100 100 1001 Cl  0   0    0    -1.570092 Cl  0   0    0     1.57009#restrainbond 1 2 2000 2000 3.14

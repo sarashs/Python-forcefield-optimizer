@@ -1,8 +1,9 @@
-import REAXConstants
+import REAXConstants, ForceField
 import re
-class REAX_FF(object):
+class REAX_FF(ForceField):
     """The reactive forcefield (REAX_FF) class. This is a subclass of the ForceField class"""
     def __init__(self,ff_filePath,ParamSelect_filePath):
+        super(REAXFF, self).__init__(ff_filePath,ParamSelect_filePath)
         """This fucntion will parse the input forcefield file and write the parameters into a [#][#][#] list
         this is corresponds to the input param file where you have # # # min max
 
@@ -28,13 +29,13 @@ class REAX_FF(object):
         self.Num_Of_H_BONDS=0
         self.Num_Of_GENERAL=0
         self.removed_parts_of_FField=[]
-        self.params=[]
-        self.param_selection=[]
-        self.param_range=[]
+        #self.params=[]
+        #self.param_selection=[]
+        #self.param_range=[]
         self.selected_parameters_value=[]
-        self.param_selected=0
-        self.ParamSelect_filePath=ParamSelect_filePath
-        self.ff_filePath=ff_filePath
+        #self.param_selected=0
+        #self.ParamSelect_filePath=ParamSelect_filePath
+        #self.ff_filePath=ff_filePath
         try:
             temp_file=open(self.ff_filePath,"r")
             self.reaxFile=temp_file.readlines()
