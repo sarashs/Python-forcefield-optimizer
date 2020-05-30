@@ -1,4 +1,5 @@
-import REAXConstants, ForceField
+import REAXConstants 
+from ForceField import ForceField 
 import re
 class REAX_FF(ForceField):
     """The reactive forcefield (REAX_FF) class. This is a subclass of the ForceField class"""
