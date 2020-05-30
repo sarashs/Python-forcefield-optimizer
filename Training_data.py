@@ -7,6 +7,7 @@ class Training_data(object):
         -complete the energy and charge training parameters prepration
     """
 # This would be a list like: self.training_energy=[[Weight,Coefficient,name_string,Coefficient,name_string,Energy_number],[],...]
+#self.training_charge =[[weight, name_string, dict[ID][charge]], [weight, name_string, dict[ID][charge]], ...]
     def __init__(self, train_data_filepath):
         self.training_charge= []
         self.training_energy= []
@@ -42,11 +43,10 @@ class Training_data(object):
                 elif (charge_flag and not(Energy_flag)):
                     if re.findall(r'[-+]?\d*\.\d+|\d+',line_item):
                         all_of_the_strings = re.findall(r'[a-zA-Z]\w*',line_item) #(?:\d*)
-                        all_of_the_numbers = re.findall('-?\d+\.?\d*',line_item)
-                        length_of_strings = len(all_of_the_strings)
+                        all_of_the_numbers = re.findall(r'[-+]?\b\d+\.?\d*',line_item)
                         training_charge_temp = [float(all_of_the_numbers[0]), all_of_the_strings[0]]
-                        for string_item_number in range(1,length_of_strings):
-                            training_charge_temp = training_charge_temp + [all_of_the_strings[string_item_number], float(all_of_the_numbers[string_item_number])]
+                        training_charge_dict ={int(i):float(j) for i, j in zip(all_of_the_numbers[1::2], all_of_the_numbers[2::2])}
+                        training_charge_temp.append(training_charge_dict)
                         self.training_charge.append(training_charge_temp)
         except IOError:
             print('An error occured trying to read the training data file.')
