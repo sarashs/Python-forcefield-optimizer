@@ -30,6 +30,7 @@ class Training_data(object):
                     charge_flag=True
                     self.training_charge_weight=float(re.findall(r'[-+]?\d*\.\d+|\d+',line_item)[0])
                     continue
+                #reading the energy training specs
                 if (Energy_flag and not(charge_flag)):
                     if re.findall(r'[-+]?\d*\.\d+|\d+',line_item):
                         begining_of_first_string=re.search('\*',line_item).span()[0]+1
@@ -37,8 +38,15 @@ class Training_data(object):
                         begining_of_second_string=re.search('\*',line_item[end_of_first_string:]).span()[0]+1+end_of_first_string
                         end_of_second_string=re.search('\s',line_item[begining_of_second_string:]).span()[0]+begining_of_second_string #r'[-+]?\d*\.\d+|\d+'
                         self.training_energy.append([float(re.findall('-?\d+\.?\d*',line_item)[0]),float(re.findall('-?\d+\.?\d*',line_item)[1]),line_item[begining_of_first_string:end_of_first_string],float(re.findall('-?\d+\.?\d*',line_item[end_of_first_string+1:])[0]),line_item[begining_of_second_string:end_of_second_string],float(re.findall('-?\d+\.?\d*',line_item[end_of_second_string+1:])[0])])
+                #reading the charge training specs
                 elif (charge_flag and not(Energy_flag)):
                     if re.findall(r'[-+]?\d*\.\d+|\d+',line_item):
-                        pass
+                        all_of_the_strings = re.findall(r'[a-zA-Z]\w*',line_item) #(?:\d*)
+                        all_of_the_numbers = re.findall('-?\d+\.?\d*',line_item)
+                        length_of_strings = len(all_of_the_strings)
+                        training_charge_temp = [float(all_of_the_numbers[0]), all_of_the_strings[0]]
+                        for string_item_number in range(1,length_of_strings):
+                            training_charge_temp = training_charge_temp + [all_of_the_strings[string_item_number], float(all_of_the_numbers[string_item_number])]
+                        self.training_charge.append(training_charge_temp)
         except IOError:
             print('An error occured trying to read the training data file.')
