@@ -8,7 +8,7 @@ class REAX_FF(ForceField):
     """The reactive forcefield (REAX_FF) class. This is a subclass of the ForceField class"""
     def __init__(self,ff_filePath,ParamSelect_filePath):
         super().__init__(ff_filePath,ParamSelect_filePath)
-        """This fucntion will parse the input forcefield file and write the parameters into a [#][#][#] list
+        """This fucntion will parse the input forcefield file and write the parameters into a [#][#][#] dictionary
         this is corresponds to the input param file where you have # # # min max
 
     Attributes
@@ -17,7 +17,8 @@ class REAX_FF(ForceField):
             n*3 is the list of reaxff parameters to be optimized
 
         params: dictionary
-            list of parameters in the reaxff file format shape.
+            list of parameters in the reaxff file format shape dict[section][entry][item].
+            for general parameters it's always dict[section][item][1]
 
         selected_parameters_value: float array
             array of the values of the selected parameters
