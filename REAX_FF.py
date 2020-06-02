@@ -172,49 +172,53 @@ class REAX_FF(ForceField):
         """
         #By default I use self.params for params
         if params is None:
-            params=self.params
+            params = self.params
         #
-        temp_file=open(Out_ff_filePath,"w")
+        try:
+            temp_file = open(Out_ff_filePath,"w")
+        except IOError:
+            print('An error occured trying to write the forcefield file.')
         temp_file.write("Reactive MD-force field optimized by GRACE optimization tool\n")
         temp_file.write(" "+str(self.Num_Of_GENERAL)+"       ! Number of general parameters\n")
         for i in range(self.Num_Of_GENERAL):
-            temp_file.write(self.removed_parts_of_FField[i][0]+str(params[REAXConstants.GENERAL_NUM-1][i][0]).ljust(8)+self.removed_parts_of_FField[i][1]+"\n")
+            temp_file.write(self.removed_parts_of_FField[i][0]+str(params[REAXConstants.GENERAL_NUM][i+1][1]).ljust(8)+self.removed_parts_of_FField[i][1]+"\n")
         temp_file.write("  "+str(self.Num_Of_Atoms).ljust(6)+"! Nr of atoms; cov.r; valency;a.m;Rvdw;Evdw;gammaEEM;cov.r2;#\n")
         temp_file.write("      alfa;gammavdW;valency;Eunder;Eover;chiEEM;etaEEM;n.u.\n")
         temp_file.write("      cov r3;Elp;Heat inc.;n.u.;n.u.;n.u.;n.u.\n")
         temp_file.write("      Rov/un;val1;n.u.;val3,vval4\n")
         for i in range(self.Num_Of_Atoms):
             for k in range(4):
-                temp_file.write(self.removed_parts_of_FField[i*4+self.Num_Of_GENERAL+k]+ "".join(str(j).ljust(9) for j in params[REAXConstants.ATOMS_NUM-1][i][k*8:(k+1)*8])+"\n")
+                temp_file.write(self.removed_parts_of_FField[i*4+self.Num_Of_GENERAL+k]+ "".join(str(params[REAXConstants.ATOMS_NUM][i+1][j+1]).ljust(9) for j in range(k*8, (k+1)*8))+"\n")
         ####
         temp_file.write("  "+str(self.Num_Of_BONDS)+"     ! Nr of bonds; Edis1;LPpen;n.u.;pbe1;pbo5;13corr;pbo6 \n")
         temp_file.write("         pbe2;pbo3;pbo4;n.u.;pbo1;pbo2;ovcorr\n")
         for i in range(self.Num_Of_BONDS):
             for k in range(2):
-                temp_file.write(self.removed_parts_of_FField[i*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4+k]+ "".join(str(j).ljust(10) for j in params[REAXConstants.BONDS_NUM-1][i][k*8:(k+1)*8])+"\n")
+                temp_file.write(self.removed_parts_of_FField[i*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4+k]+ "".join(str(params[REAXConstants.BONDS_NUM][i+1][j+1]).ljust(10) for j in range(k*8, (k+1)*8))+"\n")
         ####
-        temp_file.write("  "+str(self.Num_Of_OFF_DIAG)+"     ! Nr of off-diagonal terms; Ediss;Ro;gamma;rsigma;rpi;rpi2\n")
+        temp_file.write("  " + str(self.Num_Of_OFF_DIAG) + "     ! Nr of off-diagonal terms; Ediss;Ro;gamma;rsigma;rpi;rpi2\n")
         for i in range(self.Num_Of_OFF_DIAG):
-            temp_file.write(self.removed_parts_of_FField[i+self.Num_Of_BONDS*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4]+ "".join(str(j).ljust(10) for j in params[REAXConstants.OFF_DIAG_NUM-1][i])+"\n")
+            temp_file.write(self.removed_parts_of_FField[i+self.Num_Of_BONDS*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4]+ "".join(str(j).ljust(10) for j in list(params[REAXConstants.OFF_DIAG_NUM][i+1].values()))+"\n")
         ####
         temp_file.write("  "+str(self.Num_Of_ANGLES)+"     ! Nr of angles;at1;at2;at3;Thetao,o;ka;kb;pv1;pv2\n")
         for i in range(self.Num_Of_ANGLES):
-            temp_file.write(self.removed_parts_of_FField[i+self.Num_Of_OFF_DIAG+self.Num_Of_BONDS*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4]+ "".join(str(j).ljust(10) for j in params[REAXConstants.ANGLES_NUM-1][i])+"\n")
+            temp_file.write(self.removed_parts_of_FField[i+self.Num_Of_OFF_DIAG+self.Num_Of_BONDS*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4]+ "".join(str(j).ljust(10) for j in list(params[REAXConstants.ANGLES_NUM][i+1].values()))+"\n")
         ####
         temp_file.write("  "+str(self.Num_Of_TORSIONS)+"     ! Nr of torsions;at1;at2;at3;at4;;V1;V2;V3;V2(BO);vconj;n.u;n\n")
         for i in range(self.Num_Of_TORSIONS):
-            temp_file.write(self.removed_parts_of_FField[i+self.Num_Of_ANGLES+self.Num_Of_OFF_DIAG+self.Num_Of_BONDS*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4]+ "".join(str(j).ljust(10) for j in params[REAXConstants.TORSIONS_NUM-1][i])+"\n")
+            temp_file.write(self.removed_parts_of_FField[i+self.Num_Of_ANGLES+self.Num_Of_OFF_DIAG+self.Num_Of_BONDS*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4]+ "".join(str(j).ljust(10) for j in list(params[REAXConstants.TORSIONS_NUM][i+1].values()))+"\n")
         ####
         temp_file.write("  "+str(self.Num_Of_H_BONDS)+"     ! Nr of hydrogen bonds;at1;at2;at3;Rhb;Dehb;vhb1\n")
         if self.Num_Of_H_BONDS>0:
             for i in range(self.Num_Of_H_BONDS):
-                temp_file.write(self.removed_parts_of_FField[i+self.Num_Of_TORSIONS+self.Num_Of_ANGLES+self.Num_Of_OFF_DIAG+self.Num_Of_BONDS*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4]+ "".join(str(j).ljust(10) for j in params[REAXConstants.H_BONDS_NUM-1][i])+"\n")
+                temp_file.write(self.removed_parts_of_FField[i+self.Num_Of_TORSIONS+self.Num_Of_ANGLES+self.Num_Of_OFF_DIAG+self.Num_Of_BONDS*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4]+ "".join(str(j).ljust(10) for j in list(params[REAXConstants.H_BONDS_NUM][i+1]))+"\n")
+        temp_file.close()
     def parseParamSelectionFile(self):
         """This file reads the parameter file in
         builds the param_selection list and selected_parameters_value array
         """
         try:
-            temp_file=open(self.ParamSelect_filePath,"r")
+            temp_file = open(self.ParamSelect_filePath,"r")
             self.Param_read=temp_file.readlines()
             self.param_selected=len(self.Param_read)
         except IOError:
@@ -227,3 +231,4 @@ class REAX_FF(ForceField):
             #these should be -1 since lists start from 0 and the param file starts from 1
             self.param_range.append([float(self.Param_read[i][3]),float(self.Param_read[i][4]),float(self.Param_read[i][5])])
             self.selected_parameters_value.append(self.params[int(self.Param_read[i][0])-1][int(self.Param_read[i][1])-1][int(self.Param_read[i][2])-1])
+        temp_file.close()
