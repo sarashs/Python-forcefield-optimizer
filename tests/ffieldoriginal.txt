@@ -39,7 +39,7 @@ Reactive MD-force field
     5.0000 !Comment here
     0.0000 !Comment here
     2.6962 !Comment here
-  5    !Nr of atoms; cov.r; valency;a.m;Rvdw;Evdw;gammaEEM;cov.r2;
+  5    ! Nr of atoms; cov.r; valency;a.m;Rvdw;Evdw;gammaEEM;cov.r2;
             alfa;gammavdW;valency;Eunder;Eover;chiEEM;etaEEM;n.u.
             cov r3;Elp;Heat inc.;n.u.;n.u.;n.u.;n.u.
             ov/un;val1;n.u.;val3,vval4
