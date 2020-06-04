@@ -31,13 +31,13 @@ class SA(object):
     single_best_solution: list,
         Contains the single best solution rom the last set of annealers.
     """
-    def __init__(self,forcefield_path,params_path,Training_file,Input_structure_file,T=1,T_min=0.00001,alpha=0.9,max_iter=50, number_of_points=1):
+    def __init__(self,forcefield_path,params_path,Training_file,Input_structure_file,T=1,T_min=0.00001,Temperature_decreasing_factor=0.1,max_iter=50, number_of_points=1):
         self.T=T
-        self.T_min=T_min
-        self.alpha=alpha
-        self.max_iter=max_iter
-        self.Input_structure_file=Input_structure_file
-        self.Training_file=Training_file
+        self.T_min = T_min
+        self.alpha = Temperature_decreasing_factor
+        self.max_iter = max_iter
+        self.Input_structure_file = Input_structure_file
+        self.Training_file = Training_file
         self.number_of_points = number_of_points
         ###### take them to SA REAX
         self.init_ff= [0] * number_of_points #REAX_FF(forcefield_path,params_path)
@@ -112,6 +112,11 @@ class SA(object):
         item = self.cost_.index(min(self.cost_))
         self.single_best_solution = self.sol_[item]
     def anneal(self):
+        #Automatic temperature rate control initialize
+        tmp_ctrl_step = 0
+        total_accept = 0
+        accept_rate = 0
+        ###
         self.cost_function()
         current_sol = self.sol_
         cost_old = self.cost_
@@ -124,13 +129,27 @@ class SA(object):
                 self.cost_function()
                 cost_new = self.cost_
                 ap=self.accept_prob(cost_old, cost_new)
+                # counting the total number of steps for all of the annealers
+                tmp_ctrl_step += 1
                 for item in range(self.number_of_points):
                     if ap[item] > random():
                         current_sol[item] = self.sol_[item]
                         cost_old[item] = cost_new[item]
                         self.costs[i][item] = cost_new[item]
+                        # counting total acceptance
+                        total_accept += 1
+                        #
                     else:
                         self.cost_[item] = cost_old[item]
                         self.sol_[item] = current_sol[item]
+                #  check the acceptance rates at every 100 steps
+                if tmp_ctrl_step == 100:
+                    accept_rate = total_accept / self.number_of_points
+                    tmp_ctrl_step = 0
+                    total_accept = 0
+                    if accept_rate > 70:
+                        self.alpha *= 1.2
+                    elif accept_rate < 30:
+                        self.alpha /= 1.2
                 i += 1
-            self.T = self.T*self.alpha
+            self.T = self.T * (1 - self.alpha)
