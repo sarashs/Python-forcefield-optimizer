@@ -13,7 +13,7 @@ class REAX_FF(ForceField):
 
     Attributes
     --------------
-        param_selection: list
+        param_selection: list of tuples [(a, b, c), ]
             n*3 is the list of reaxff parameters to be optimized
 
         params: dictionary
@@ -34,7 +34,6 @@ class REAX_FF(ForceField):
         self.Num_Of_H_BONDS=0
         self.Num_Of_GENERAL=0
         self.removed_parts_of_FField=[]
-        #self.params
         self.params[REAXConstants.GENERAL_NUM] = {} 
         self.params[REAXConstants.ANGLES_NUM] = {} 
         self.params[REAXConstants.ATOMS_NUM] = {} 
@@ -42,11 +41,6 @@ class REAX_FF(ForceField):
         self.params[REAXConstants.H_BONDS_NUM] = {} 
         self.params[REAXConstants.OFF_DIAG_NUM] = {} 
         self.params[REAXConstants.TORSIONS_NUM] = {} 
-        ###
-        #self.param_selection=[]
-        #self.param_range=[]
-        self.selected_parameters_value=[]
-        #self.param_selected=0
         #self.ParamSelect_filePath=ParamSelect_filePath
         #self.ff_filePath=ff_filePath
         try:
@@ -227,8 +221,7 @@ class REAX_FF(ForceField):
         for j in range(self.param_selected):
             while '' in self.Param_read[j]: self.Param_read[j].remove('')
         for i in range(self.param_selected):
-            self.param_selection.append([int(self.Param_read[i][0])-1, int(self.Param_read[i][1])-1, int(self.Param_read[i][2])-1])
-            #these should be -1 since lists start from 0 and the param file starts from 1
-            self.param_range.append([float(self.Param_read[i][3]),float(self.Param_read[i][4]),float(self.Param_read[i][5])])
-            self.selected_parameters_value.append(self.params[int(self.Param_read[i][0])-1][int(self.Param_read[i][1])-1][int(self.Param_read[i][2])-1])
+            temp_tuple = (int(self.Param_read[i][0]), int(self.Param_read[i][1]), int(self.Param_read[i][2]))
+            self.param_selection.append(temp_tuple)
+            self.param_min_max_delta[temp_tuple] = {'delta' : float(self.Param_read[i][3]), 'min': float(self.Param_read[i][4]), 'max': float(self.Param_read[i][5])}
         temp_file.close()
