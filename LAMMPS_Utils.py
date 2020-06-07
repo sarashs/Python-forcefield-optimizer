@@ -10,7 +10,7 @@ LAMMPS utils containing:
 
 """
 import re
-def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_forcefield='ffield.reax',Forcefield_type = 'reax'):
+def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_forcefield='ffield.reax',Forcefield_type = 'reax', file_path = ""):
     """
     This function creates the lammps input file
     :param Input_structure_file:
@@ -23,7 +23,7 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
         l=f.readlines()
         for item in l:
             if '#structure ' in item:
-                Input_data_file_list.append(item.replace('#structure ','').replace('\n','').replace(' ',''))
+                Input_data_file_list.append(item.replace('#structure ','').replace('\n','').replace(' ','')+".dat")
         f.close()
     except IOError:
         print('An error occured trying to read the training data file.')
@@ -33,7 +33,7 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
            atom_type=0
            if '#structure ' in item:
               LAMMPS_Data_file=l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+".data"
-              LAMMPS_Input_file=l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+".dat"
+              LAMMPS_Input_file=file_path + l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+".dat"
               s=open(LAMMPS_Input_file,'w')
               s.close()
               s=open(LAMMPS_Input_file,'a')
@@ -95,10 +95,11 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
               s.write('min_style cg\n')
               s.write('minimize 1.0e-7 1.0e-9 20000 20000\n')
               s.write('undump DUMP2\n')
-           s.close()
+              s.close()
     f.close()
+    return Input_data_file_list
 
-def geofilecreator(Input_structure_file="Inputstructurefile.txt"):
+def geofilecreator(Input_structure_file="Inputstructurefile.txt", file_path = ""):
     """
     This function creates lammps data files
     """
@@ -107,7 +108,7 @@ def geofilecreator(Input_structure_file="Inputstructurefile.txt"):
     for item in l:
            atom_type=0
            if '#structure ' in item:
-              LAMMPS_Data_file=l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+".data"
+              LAMMPS_Data_file = file_path + l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+".data"
               s=open(LAMMPS_Data_file,'w')
               s.close()
               s=open(LAMMPS_Data_file,'a')

@@ -1,4 +1,4 @@
-from random import random
+import random
 from REAX_FF import *
 import numpy as np
 from Training_data import *
@@ -31,7 +31,8 @@ class SA(object):
     single_best_solution: list,
         Contains the single best solution rom the last set of annealers.
     """
-    def __init__(self,forcefield_path,params_path,Training_file,Input_structure_file,T=1,T_min=0.00001,Temperature_decreasing_factor=0.1,max_iter=50, number_of_points=1):
+    def __init__(self,forcefield_path,output_path,params_path,Training_file,Input_structure_file,T=1,T_min=0.00001,Temperature_decreasing_factor=0.1,max_iter=50, number_of_points=1):
+        self.general_output_path = output_path
         self.T=T
         self.T_min = T_min
         self.alpha = Temperature_decreasing_factor
@@ -39,9 +40,8 @@ class SA(object):
         self.Input_structure_file = Input_structure_file
         self.Training_file = Training_file
         self.number_of_points = number_of_points
-        ###### take them to SA REAX
-        self.init_ff= [0] * number_of_points #REAX_FF(forcefield_path,params_path)
-        #self.init_ff.parseParamSelectionFile()
+        #This should be defined for each forcefield separately
+        self.init_ff= [0] * number_of_points
         self.cost_= [0] * number_of_points
         ###### take them to SA REAX
         # this is a list of solutions
@@ -57,17 +57,6 @@ class SA(object):
 
         """
         pass
-#        for j in range(self.init_ff.param_selected):
-#            while True:
-#                sol_=self.sol_[j]+ self.init_ff.param_range[j][0]*random()-self.init_ff.param_range[j][0]
-#                if sol_ > self.init_ff.param_range[j][1] and sol_ < self.init_ff.param_range[j][2]:
-#                    break
-#            self.sol_[j]=sol_
-#            self.init_ff.params[self.init_ff.param_selection[j][0]][self.init_ff.param_selection[j][1]][self.init_ff.param_selection[j][2]]=self.sol_[j]
-#        self.init_ff.write_forcefield("ffsolution.reax")
-#        lammps_input_creator(self.Input_structure_file,"ffsolution.reax")
-#        self._Input_data_file_list=list_of_structures(self.Input_structure_file)
-#        self.Training_data=Training_data(self.Training_file)
     def cost_function(self):
 #        for i in self._Input_data_file_list:
 #            self.energies.update({i: self.__Individual_Energy(i)})
