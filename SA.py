@@ -41,11 +41,11 @@ class SA(object):
         self.Training_file = Training_file
         self.number_of_points = number_of_points
         #This should be defined for each forcefield separately
-        self.init_ff= [0] * number_of_points
+        #self.init_ff= {}
         self.cost_= [0] * number_of_points
         ###### take them to SA REAX
         # this is a list of solutions
-        self.sol_= [0] * number_of_points #self.init_ff.selected_parameters_value
+        self.sol_= {}#[0] * number_of_points #self.init_ff.selected_parameters_value
         self.costs = {}
         self.single_best_solution = []
     def input_generator(self):
