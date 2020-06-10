@@ -1,7 +1,7 @@
 import random
 from REAX_FF import *
 import numpy as np
-from Training_data import *
+from Training_data import Training_data
 class SA(object):
     """ Simulated Annealing optimizer.
     I have implemented a simple simulated annealing algorithm which will run on "number_of_point" different annealers and finally picks the best among those.
@@ -25,9 +25,9 @@ class SA(object):
     sol_ : list of solution objects for each annealer
         Solution to the cost function.
     costs : dictionary, 
-    -Keys = iteration
-    -Values = [list of costs]
-        Costs over time
+        -Keys = iteration
+        -Values = [list of costs]
+            Costs over time
     single_best_solution: list,
         Contains the single best solution rom the last set of annealers.
     """
@@ -38,7 +38,8 @@ class SA(object):
         self.alpha = Temperature_decreasing_factor
         self.max_iter = max_iter
         self.Input_structure_file = Input_structure_file
-        self.Training_file = Training_file
+        # Training data for the Energy calculation
+        self.Training_info = Training_data(output_path + Training_file)
         self.number_of_points = number_of_points
         #This should be defined for each forcefield separately
         #self.init_ff= {}
@@ -47,6 +48,8 @@ class SA(object):
         # this is a list of solutions
         self.sol_= {}#[0] * number_of_points #self.init_ff.selected_parameters_value
         self.costs = {}
+        #Energy per annealer per structure
+        self.structure_energies = {}
         self.single_best_solution = []
     def input_generator(self):
         """Generates the next solution.
@@ -66,19 +69,11 @@ class SA(object):
 
     def __Individual_Energy(self):
         """
-        Computes the Energy for individual members of population and for individual input file
+        Computes the Energy for all members of population and for all input file
         This is a private method that is called by objective function calculator
         :return: float Energy
         """
         pass
-#        #Running lammps and python in serial
-#        from lammps import lammps
-#        lmp = lammps()
-#        lmp.file(lammps_input_file_name)
-#        etotal = lmp.get_thermo("etotal")
-#        #pe = lmp.get_thermo("pe")
-#        lmp.close()
-#        return etotal
 
     def accept_prob(self,c_old,c_new):
         """Computes the acceptance probability.

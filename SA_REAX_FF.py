@@ -5,6 +5,13 @@ Created on Mon Jun  1 16:37:58 2020
 
 @author: sarashs
 This is the reax forcefield simulated annealing class. The energy functions and data types are defined per reax forcefield.
+
+    Attributes
+    --------------
+    structure_energies : dict of dict
+        energy calculated per annealer (forcefield) per structure file.
+    structure_charges : dict of dict
+        charge calculated per annealer (forcefield) per structure file.
 """
 from REAX_FF import REAX_FF 
 from copy import deepcopy
@@ -20,17 +27,22 @@ class SA_REAX_FF(SA):
         # Initial forcefield (initial annealer(s))
         temp_init = REAX_FF(forcefield_path,params_path)
         temp_init.parseParamSelectionFile()
+        self.structure_charges = {} 
         forcefield_name = "anenaler_" + str(0) + ".reax"
         self.sol_[forcefield_name] = deepcopy(temp_init)
         self.sol_[forcefield_name].ff_filePath = self.general_output_path + forcefield_name
         self.sol_[forcefield_name].write_forcefield(self.general_output_path + forcefield_name)
         self.lammps_file_list = {} #dictionary keys: forcefield tag, values: list of lammps files
         self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, 'reax', self.general_output_path)
+        self.structure_energies[forcefield_name] = {} 
+        self.structure_charges[forcefield_name] = {} 
         for i in range(1, number_of_points):
             forcefield_name = "anenaler_" + str(i) + ".reax"
             self.sol_[forcefield_name] = deepcopy(temp_init)
             self.sol_[forcefield_name].ff_filePath = self.general_output_path + forcefield_name
             self.input_generator(forcefield_name, update = "YES")
+            self.structure_energies[forcefield_name] = {}
+            self.structure_charges[forcefield_name] = {} 
     def input_generator(self, forcefield_name, update = "YES"):
         """Generates the next solution.
 
@@ -62,21 +74,20 @@ class SA_REAX_FF(SA):
         """
         Computes the Energy for ALL of the annealers and for ALL input file
         This is a private method that is called by objective function calculator
-        :return: float Energy
+        :return: nothing
         """
-        #Running lammps and python in serial
-        lmp = {}
-        etotal = {}
+#####Running lammps and python in serial        
         if "NO" in parallel:
-            pass
+            for item in self.sol_.keys():
+                for a_file in self.lammps_file_list[item]:
+                    lmp = lammps()
+                    lmp.file(self.general_output_path + a_file)
+                    self.structure_energies[item][a_file] = lmp.get_thermo("etotal")
+                    #pe = lmp.get_thermo("pe")
+                    lmp.close()
         elif "YES" in parallel:
             pass
         else:
             raise ValueError("parallel value for __Individual_Energy takes YES or NO only!")
-#        for item in self.sol_.keys():
-#            lmp[item] = lammps()
-#            lmp[item].file(self.lammps_file_list[item])
-#            etotal[item] = lmp[item].get_thermo("etotal")
-#            #pe = lmp.get_thermo("pe")
-#            lmp[item].close()
-        return etotal
+#####
+            
