@@ -9,6 +9,8 @@ This is the reax forcefield simulated annealing class. The energy functions and 
 from REAX_FF import REAX_FF 
 from copy import deepcopy
 from LAMMPS_Utils import lammps_input_creator
+from lammps import lammps
+from mpi4py import MPI
 from SA import SA
 import random
 
@@ -56,3 +58,25 @@ class SA_REAX_FF(SA):
             raise ValueError("update value for inpute_generator takes YES or NO only!")
         # use the same name for the input structure file
         self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, 'reax', self.general_output_path)
+    def __Individual_Energy(self, parallel = "NO"):
+        """
+        Computes the Energy for ALL of the annealers and for ALL input file
+        This is a private method that is called by objective function calculator
+        :return: float Energy
+        """
+        #Running lammps and python in serial
+        lmp = {}
+        etotal = {}
+        if "NO" in parallel:
+            pass
+        elif "YES" in parallel:
+            pass
+        else:
+            raise ValueError("parallel value for __Individual_Energy takes YES or NO only!")
+#        for item in self.sol_.keys():
+#            lmp[item] = lammps()
+#            lmp[item].file(self.lammps_file_list[item])
+#            etotal[item] = lmp[item].get_thermo("etotal")
+#            #pe = lmp.get_thermo("pe")
+#            lmp[item].close()
+        return etotal
