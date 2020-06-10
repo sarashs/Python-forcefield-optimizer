@@ -43,7 +43,7 @@ class SA(object):
         self.number_of_points = number_of_points
         #This should be defined for each forcefield separately
         #self.init_ff= {}
-        self.cost_= [0] * number_of_points
+        self.cost_= {}#[0] * number_of_points
         ###### take them to SA REAX
         # this is a list of solutions
         self.sol_= {}#[0] * number_of_points #self.init_ff.selected_parameters_value
@@ -61,10 +61,12 @@ class SA(object):
         """
         pass
     def cost_function(self):
-#        for i in self._Input_data_file_list:
-#            self.energies.update({i: self.__Individual_Energy(i)})
-#        for i in self.Training_data:
-#            self.cost_+=float(i[0])*(float(i[1])*self.energies[i[2]]-float(i[3],lammps_input_file_name))*self.energies[i[4]]-float(i[5]))**2
+        """Computes the cost function.
+        Returns
+        -------
+        self : object
+        
+        """
         pass
 
     def __Individual_Energy(self):

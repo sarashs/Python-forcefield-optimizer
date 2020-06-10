@@ -10,6 +10,7 @@ This is the reax forcefield simulated annealing class. The energy functions and 
     --------------
     structure_energies : dict of dict
         energy calculated per annealer (forcefield) per structure file.
+        [forcefield_name][structure_name] = energy
     structure_charges : dict of dict
         charge calculated per annealer (forcefield) per structure file.
 """
@@ -48,7 +49,7 @@ class SA_REAX_FF(SA):
 
         Returns
         -------
-        Nothing
+        self : object
 
         """
         if "YES" in update:
@@ -74,7 +75,10 @@ class SA_REAX_FF(SA):
         """
         Computes the Energy for ALL of the annealers and for ALL input file
         This is a private method that is called by objective function calculator
-        :return: nothing
+        :return: 
+        --------
+        self : object
+        
         """
 #####Running lammps and python in serial        
         if "NO" in parallel:
@@ -89,5 +93,15 @@ class SA_REAX_FF(SA):
             pass
         else:
             raise ValueError("parallel value for __Individual_Energy takes YES or NO only!")
-#####
-            
+    def cost_function(self):
+        """Computes the cost function.
+        Returns
+        -------
+        self : object
+        
+        """
+        # decide whether or not to do the charge based on self.training_charge_weight= 0
+##### Computing energy 
+        for item in self.sol_.keys():
+        #self.cost_ = self.training_energy_weight * sum()
+##### Computing charge           
