@@ -101,7 +101,9 @@ class SA_REAX_FF(SA):
         
         """
         # decide whether or not to do the charge based on self.training_charge_weight= 0
-##### Computing energy 
         for item in self.sol_.keys():
-        #self.cost_ = self.training_energy_weight * sum()
-##### Computing charge           
+            ##### Cost calculation: For now mean square
+            ##### Computing energy
+            self.cost_ = self.training_energy_weight * sum([trainee[0] * (trainee[1] * self.structure_energies[item][trainee[2]]+ trainee[3] * self.structure_energies[item][trainee[4]] - trainee[5]) ** 2 for trainee in self.Training_info.training_energy])
+            ##### Computing charge 
+            
