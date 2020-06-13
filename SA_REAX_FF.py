@@ -21,6 +21,7 @@ from lammps import lammps
 #from mpi4py import MPI
 from SA import SA
 import random
+import time
 
 class SA_REAX_FF(SA):
     def __init__(self,forcefield_path, output_path, params_path, Training_file, Input_structure_file, T=1, T_min=0.00001, Temperature_decreasing_factor=0.1, max_iter=50, number_of_points=1):
@@ -61,7 +62,7 @@ class SA_REAX_FF(SA):
                         break
             ####
             # save the new forcefield file
-            self.sol_[forcefield_name].write_forcefield(self.Input_structure_file + forcefield_name)
+            self.sol_[forcefield_name].write_forcefield(self.general_output_path + forcefield_name)
             # I think these two neet to be removed
             #self._Input_data_file_list = list_of_structures(self.Input_structure_file)
             #self.Training_data = Training_data(self.Training_file)
@@ -104,7 +105,7 @@ class SA_REAX_FF(SA):
         for item in self.sol_.keys():
             ##### Cost calculation: For now mean square
             ##### Computing energy
-            self.cost_[item] = self.Training_info.training_energy_weight * sum([trainee[0] * (trainee[1] * self.structure_energies[item][trainee[2]]+ trainee[3] * self.structure_energies[item][trainee[4]] - trainee[5]) ** 2 for trainee in self.Training_info.training_energy])
+            self.cost_[item] = self.Training_info.training_energy_weight * sum([trainee[0] * (trainee[1] * self.structure_energies[item][trainee[2] + '.dat']+ trainee[3] * self.structure_energies[item][trainee[4] + '.dat'] - trainee[5]) ** 2 for trainee in self.Training_info.training_energy])
             ##### Computing charge 
     def anneal(self, record_costs = "NO"):
         #Automatic temperature rate control initialize
@@ -116,12 +117,17 @@ class SA_REAX_FF(SA):
         self.cost_function()
         current_sol = self.sol_
         cost_old = self.cost_
+        start_time = time.time()
         if "YES" in record_costs:
             self.costs[0] = cost_old
         while self.T > self.T_min:
+            ##
+            print(self.T, time.time() - start_time, accept_rate)
+            ##
             i = 1
             while i <= self.max_iter:
-                self.input_generator()
+                for item in self.sol_.keys():
+                    self.input_generator(item, update = "YES")
                 self.__Individual_Energy(parallel = "NO")
                 self.cost_function()
                 cost_new = self.cost_
@@ -129,7 +135,7 @@ class SA_REAX_FF(SA):
                 # counting the total number of steps for all of the annealers
                 tmp_ctrl_step += 1
                 for item in self.sol_.keys():
-                    if ap[item] > random():
+                    if ap[item] > random.random():
                         current_sol[item] = self.sol_[item]
                         cost_old[item] = cost_new[item]
                         # counting total acceptance

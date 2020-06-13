@@ -59,13 +59,13 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
               s.write('boundary p p p\n')
               s.write('atom_style charge\n\n# 2.- Atom definition ######################\n\n')
               s.write('atom_modify map hash\n')
-              s.write('read_data   '+'scripts/'+LAMMPS_Data_file+'\n')
+              s.write('read_data   '+LAMMPS_Data_file+'\n')
               s.write('\n# 3.- Force-Field ##########################\n\n')
               number_of_atoms=int(l[l.index(item)+1])
               #Forcefield params
               if(Forcefield_type in 'reax'):
                   s.write('pair_style reax/c NULL\n')
-                  s.write('pair_coeff * * '+'scripts/'+Input_forcefield)
+                  s.write('pair_coeff * * '+Input_forcefield)
               #calculate number of atom types
               for item2 in l[(l.index(item)+3):]:
                  if not ('#dimensions' in item2):
@@ -80,7 +80,7 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
               s.write('neigh_modify    every 10 check yes\n\n')
               s.write('## 4.- MD & relax parameters ################\n\n')
               ######
-              s.write('dump DUMP2 all custom 1000000 '+ 'logs/lmp_logs/'+LAMMPS_Data_file.replace('.data','.out')+'.lammpstrj'+'id type x y z q #this size \n')
+              s.write('dump DUMP2 all custom 1000000 '+LAMMPS_Data_file.replace('.data','')+'.lammpstrj'+' id type x y z q #this size \n')
               s.write('thermo_style custom step etotal ke pe temp press pxx pyy pzz \n')
               s.write('thermo 1000000\n')
               #####fix restraints
