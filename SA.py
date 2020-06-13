@@ -69,7 +69,7 @@ class SA(object):
         """
         pass
 
-    def __Individual_Energy(self):
+    def __Individual_Energy(self, parallel = "NO"):
         """
         Computes the Energy for all members of population and for all input file
         This is a private method that is called by objective function calculator
@@ -85,7 +85,7 @@ class SA(object):
         self : object
 
         """
-        ap = [np.exp(-(i_c_new-i_c_old)/self.T) for i_c_new,i_c_old in zip(c_old,c_new)]
+        ap = {item : np.exp(- (c_new[item] - c_old[item] ) / self.T) for item in c_old.keys()}
         return ap
     def best_answer_calculator(self):
         """finds the single best solution.
@@ -95,47 +95,7 @@ class SA(object):
         self : object
 
         """
-        item = self.cost_.index(min(self.cost_))
+        item = min(self.cost_, key = self.cost_.get)
         self.single_best_solution = self.sol_[item]
-    def anneal(self):
-        #Automatic temperature rate control initialize
-        tmp_ctrl_step = 0
-        total_accept = 0
-        accept_rate = 0
-        ###
-        self.cost_function()
-        current_sol = self.sol_
-        cost_old = self.cost_
-        self.costs[0] = cost_old
-        while self.T > self.T_min:
-            i = 1
-            while i <= self.max_iter:
-                self.costs[i] = cost_old
-                self.input_generator()
-                self.cost_function()
-                cost_new = self.cost_
-                ap=self.accept_prob(cost_old, cost_new)
-                # counting the total number of steps for all of the annealers
-                tmp_ctrl_step += 1
-                for item in range(self.number_of_points):
-                    if ap[item] > random():
-                        current_sol[item] = self.sol_[item]
-                        cost_old[item] = cost_new[item]
-                        self.costs[i][item] = cost_new[item]
-                        # counting total acceptance
-                        total_accept += 1
-                        #
-                    else:
-                        self.cost_[item] = cost_old[item]
-                        self.sol_[item] = current_sol[item]
-                #  check the acceptance rates at every 100 steps
-                if tmp_ctrl_step == 100:
-                    accept_rate = total_accept / self.number_of_points
-                    tmp_ctrl_step = 0
-                    total_accept = 0
-                    if accept_rate > 70:
-                        self.alpha *= 1.2
-                    elif accept_rate < 30:
-                        self.alpha /= 1.2
-                i += 1
-            self.T = self.T * (1 - self.alpha)
+    def anneal(self, record_costs = "NO"):
+        pass

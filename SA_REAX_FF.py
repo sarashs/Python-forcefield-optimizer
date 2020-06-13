@@ -18,7 +18,7 @@ from REAX_FF import REAX_FF
 from copy import deepcopy
 from LAMMPS_Utils import lammps_input_creator
 from lammps import lammps
-from mpi4py import MPI
+#from mpi4py import MPI
 from SA import SA
 import random
 
@@ -104,6 +104,51 @@ class SA_REAX_FF(SA):
         for item in self.sol_.keys():
             ##### Cost calculation: For now mean square
             ##### Computing energy
-            self.cost_ = self.training_energy_weight * sum([trainee[0] * (trainee[1] * self.structure_energies[item][trainee[2]]+ trainee[3] * self.structure_energies[item][trainee[4]] - trainee[5]) ** 2 for trainee in self.Training_info.training_energy])
+            self.cost_[item] = self.Training_info.training_energy_weight * sum([trainee[0] * (trainee[1] * self.structure_energies[item][trainee[2]]+ trainee[3] * self.structure_energies[item][trainee[4]] - trainee[5]) ** 2 for trainee in self.Training_info.training_energy])
             ##### Computing charge 
+    def anneal(self, record_costs = "NO"):
+        #Automatic temperature rate control initialize
+        tmp_ctrl_step = 0
+        total_accept = 0
+        accept_rate = 0
+        ###
+        self.__Individual_Energy(parallel = "NO")
+        self.cost_function()
+        current_sol = self.sol_
+        cost_old = self.cost_
+        if "YES" in record_costs:
+            self.costs[0] = cost_old
+        while self.T > self.T_min:
+            i = 1
+            while i <= self.max_iter:
+                self.input_generator()
+                self.__Individual_Energy(parallel = "NO")
+                self.cost_function()
+                cost_new = self.cost_
+                ap = self.accept_prob(cost_old, cost_new)
+                # counting the total number of steps for all of the annealers
+                tmp_ctrl_step += 1
+                for item in self.sol_.keys():
+                    if ap[item] > random():
+                        current_sol[item] = self.sol_[item]
+                        cost_old[item] = cost_new[item]
+                        # counting total acceptance
+                        total_accept += 1
+                        #
+                    else:
+                        self.cost_[item] = cost_old[item]
+                        self.sol_[item] = current_sol[item]
+                #  check the acceptance rates at every 100 steps
+                if tmp_ctrl_step == 100:
+                    accept_rate = total_accept / self.number_of_points
+                    tmp_ctrl_step = 0
+                    total_accept = 0
+                    if accept_rate > 70:
+                        self.alpha *= 1.2
+                    elif accept_rate < 30:
+                        self.alpha /= 1.2
+                i += 1
+                if "YES" in record_costs:
+                    self.costs[i] = cost_old
+            self.T = self.T * (1 - self.alpha)
             
