@@ -27,6 +27,7 @@ class SA_REAX_FF(SA):
     def __init__(self,forcefield_path, output_path, params_path, Training_file, Input_structure_file, T=1, T_min=0.00001, Temperature_decreasing_factor=0.1, max_iter=50, number_of_points=1):
         super().__init__(forcefield_path, output_path, params_path, Training_file, Input_structure_file, T, T_min, Temperature_decreasing_factor, max_iter, number_of_points)
         self.single_best_solution = None
+        self.reppeling_cost_ = {}
         # Initial forcefield (initial annealer(s))
         temp_init = REAX_FF(forcefield_path,params_path)
         temp_init.parseParamSelectionFile()
@@ -35,6 +36,7 @@ class SA_REAX_FF(SA):
         self.sol_[forcefield_name] = deepcopy(temp_init)
         self.sol_[forcefield_name].ff_filePath = self.general_path + forcefield_name
         self.sol_[forcefield_name].write_forcefield(self.general_path + forcefield_name)
+        self.reppeling_cost_[forcefield_name] = 0
         self.lammps_file_list = {} #dictionary keys: forcefield tag, values: list of lammps files
         self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, 'reax', self.general_path)
         self.structure_energies[forcefield_name] = {} 
@@ -44,6 +46,7 @@ class SA_REAX_FF(SA):
             self.sol_[forcefield_name] = deepcopy(temp_init)
             self.sol_[forcefield_name].ff_filePath = self.general_path + forcefield_name
             self.input_generator(forcefield_name, update = "YES")
+            self.reppeling_cost_[forcefield_name] = 0
             self.structure_energies[forcefield_name] = {}
             self.structure_charges[forcefield_name] = {} 
     def input_generator(self, forcefield_name, update = "YES"):
@@ -81,8 +84,8 @@ class SA_REAX_FF(SA):
         --------
         self : object
         
-        """
-#####Running lammps and python in serial        
+        """         
+     ####Running lammps and python in serial        
         if "NO" in parallel:
             for item in self.sol_.keys():
                 for a_file in self.lammps_file_list[item]:
@@ -95,38 +98,58 @@ class SA_REAX_FF(SA):
             pass
         else:
             raise ValueError("parallel value for __Individual_Energy takes YES or NO only!")
-    def cost_function(self):
+    def cost_function(self, repelling_weight = 0):
         """Computes the cost function.
         Returns
         -------
         self : object
         
         """
+        epsilon = 1e-10
         # decide whether or not to do the charge based on self.training_charge_weight= 0
         for item in self.sol_.keys():
             ##### Cost calculation: For now mean square
             ##### Computing energy
             self.cost_[item] = self.Training_info.training_energy_weight * sum([trainee[0] * (trainee[1] * self.structure_energies[item][trainee[2] + '.dat']+ trainee[3] * self.structure_energies[item][trainee[4] + '.dat'] - trainee[5]) ** 2 for trainee in self.Training_info.training_energy])
             ##### Computing charge 
-    def anneal(self, record_costs = "NO"):
+            ####Applying a repelling potential sum(x**2) where x is the set of optimized parameter
+            if repelling_weight != 0:
+                #The potential is not applied to the zeroth annealer but to others'
+                if "0" in item:
+                    self.reppeling_cost_[item] = 0
+                else:
+                    for item2 in self.sol_.keys():
+                        if (item2 != item):
+                            distance = 0
+                            for param_tuple in self.sol_[item2].param_min_max_delta.keys():
+                                X_1 = self.sol_[item].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]
+                                X_2 = self.sol_[item2].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]
+                                distance += (X_1 - X_2)**2
+                            # to prevent division by zero we add epsilon
+                            self.reppeling_cost_[item] += repelling_weight * 1 / (distance + epsilon)
+                    self.cost_[item] +=  self.reppeling_cost_[item]
+                    ###debug
+                    print(item, self.reppeling_cost_[item])
+                    ##
+    def anneal(self, record_costs = "NO", repelling_weight = 0):
         #Automatic temperature rate control initialize
         tmp_ctrl_step = 0
         total_accept = 0
         accept_rate = 0
         ###
         self.__Individual_Energy(parallel = "NO")
-        self.cost_function()
+        self.cost_function(repelling_weight=repelling_weight)
         current_sol = deepcopy(self.sol_)
         cost_old = deepcopy(self.cost_)
         if "YES" in record_costs:
-            self.costs.append({temp_key:cost_old[temp_key] for temp_key in cost_old.keys()})
+            self.costs.append({temp_key:cost_old[temp_key] - self.reppeling_cost_[temp_key] for temp_key in cost_old.keys()})
         while self.T > self.T_min:
             i = 1
             while i <= self.max_iter:
                 for item in self.sol_.keys():
                     self.input_generator(item, update = "YES")
                 self.__Individual_Energy(parallel = "NO")
-                self.cost_function()
+                self.cost_function(repelling_weight=repelling_weight)
                 cost_new = deepcopy(self.cost_)
                 ap = self.accept_prob(cost_old, cost_new)
                 # counting the total number of steps for all of the annealers
@@ -152,13 +175,21 @@ class SA_REAX_FF(SA):
 #                        self.alpha /= 1.1
                 i += 1
                 ## debug
-                print(self.T, total_accept)
+                #print(self.T, total_accept)
                 ##
                 if "YES" in record_costs:
-                    self.costs.append({temp_key:cost_old[temp_key] for temp_key in cost_old.keys()})
+                    self.costs.append({temp_key:cost_old[temp_key] - self.reppeling_cost_[temp_key] for temp_key in cost_old.keys()})
             self.T = self.T * (1 - self.alpha)
         ### writing the best output
-        self.single_best_solution = self.sol_[min(self.cost_, key = self.cost_.get)]
+        ###removing the repelant costs first
+        if repelling_weight != 0:
+            for item in self.cost_.keys():
+                self.cost_[item] -= self.reppeling_cost_[item]
+        bestFF_key = min(self.cost_, key = self.cost_.get)
+        self.single_best_solution = self.sol_[bestFF_key]
+        ###debug
+        print(bestFF_key)
+        ###
         self.single_best_solution.write_forcefield(self.general_path+"bestFF.reax")
         ###clean up
         for item in self.sol_.keys():
