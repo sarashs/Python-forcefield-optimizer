@@ -1,4 +1,4 @@
-import random
+import os
 from REAX_FF import *
 import numpy as np
 from Training_data import Training_data
@@ -30,7 +30,7 @@ class SA(object):
         Contains the single best solution rom the last set of annealers.
     """
     def __init__(self,forcefield_path,output_path,params_path,Training_file,Input_structure_file,T=1,T_min=0.00001,Temperature_decreasing_factor=0.1,max_iter=50, number_of_points=1):
-        self.general_output_path = output_path
+        self.general_path = output_path
         self.T=T
         self.T_min = T_min
         self.alpha = Temperature_decreasing_factor
@@ -48,7 +48,7 @@ class SA(object):
         self.costs = []
         #Energy per annealer per structure
         self.structure_energies = {}
-        self.single_best_solution = []
+        self.single_best_solution = None
     def input_generator(self):
         """Generates the next solution.
 
@@ -85,15 +85,19 @@ class SA(object):
         """
         ap = {item : np.exp(- (c_new[item] - c_old[item] ) / self.T) for item in c_old.keys()}
         return ap
-    def best_answer_calculator(self):
+    def clean_the_mess(self, names):
         """finds the single best solution.
+        names : list 
+        contains the name classes that we want to delete
         
         Returns
         -------
         self : object
 
         """
-        item = min(self.cost_, key = self.cost_.get)
-        self.single_best_solution = self.sol_[item]
+        for item in names:
+            command = "rm " + self.general_path + item + "*"
+            os.system(command)
+        
     def anneal(self, record_costs = "NO"):
         pass
