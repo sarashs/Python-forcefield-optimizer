@@ -40,7 +40,7 @@ class SA_REAX_FF(SA):
         self.structure_energies[forcefield_name] = {} 
         self.structure_charges[forcefield_name] = {} 
         for i in range(1, number_of_points):
-            forcefield_name = "anenaler_" + str(i) + ".reax"
+            forcefield_name = "annealer_" + str(i) + ".reax"
             self.sol_[forcefield_name] = deepcopy(temp_init)
             self.sol_[forcefield_name].ff_filePath = self.general_path + forcefield_name
             self.input_generator(forcefield_name, update = "YES")
