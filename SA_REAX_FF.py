@@ -121,6 +121,7 @@ class SA_REAX_FF(SA):
                     for item2 in self.sol_.keys():
                         if (item2 != item):
                             distance = 0
+                            self.reppeling_cost_[item] = 0
                             for param_tuple in self.sol_[item2].param_min_max_delta.keys():
                                 X_1 = self.sol_[item].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]
                                 X_2 = self.sol_[item2].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]
@@ -129,7 +130,7 @@ class SA_REAX_FF(SA):
                             self.reppeling_cost_[item] += repelling_weight * 1 / (distance + epsilon)
                     self.cost_[item] +=  self.reppeling_cost_[item]
                     ###debug
-                    print(item, self.reppeling_cost_[item])
+                    #print(item, self.reppeling_cost_[item])
                     ##
     def anneal(self, record_costs = "NO", repelling_weight = 0):
         #Automatic temperature rate control initialize
@@ -174,12 +175,12 @@ class SA_REAX_FF(SA):
 #                    elif accept_rate < 1:
 #                        self.alpha /= 1.1
                 i += 1
-                ## debug
-                #print(self.T, total_accept)
-                ##
                 if "YES" in record_costs:
                     self.costs.append({temp_key:cost_old[temp_key] - self.reppeling_cost_[temp_key] for temp_key in cost_old.keys()})
             self.T = self.T * (1 - self.alpha)
+            ## debug
+            print(self.T, total_accept)
+            ##
         ### writing the best output
         ###removing the repelant costs first
         if repelling_weight != 0:
