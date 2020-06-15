@@ -21,7 +21,7 @@ from lammps import lammps
 #from mpi4py import MPI
 from SA import SA
 import random
-import time
+#import time
 
 class SA_REAX_FF(SA):
     def __init__(self,forcefield_path, output_path, params_path, Training_file, Input_structure_file, T=1, T_min=0.00001, Temperature_decreasing_factor=0.1, max_iter=50, number_of_points=1):
@@ -57,7 +57,7 @@ class SA_REAX_FF(SA):
             # generate values for selected params
             for param_tuple in self.sol_[forcefield_name].param_min_max_delta.keys():
                 while True:
-                    self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] = self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] + random.choice([-1, 1]) * self.sol_[forcefield_name].param_min_max_delta[param_tuple]['delta']
+                    self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] = round(self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] + random.uniform(-1, 1) * self.sol_[forcefield_name].param_min_max_delta[param_tuple]['delta'], 5)
                     if self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] >= self.sol_[forcefield_name].param_min_max_delta[param_tuple]['min'] and self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] <= self.sol_[forcefield_name].param_min_max_delta[param_tuple]['max']:
                         break
             ####
@@ -87,7 +87,7 @@ class SA_REAX_FF(SA):
                 for a_file in self.lammps_file_list[item]:
                     lmp = lammps()
                     lmp.file(self.general_output_path + a_file)
-                    self.structure_energies[item][a_file] = lmp.get_thermo("etotal")
+                    self.structure_energies[item][a_file] = round(lmp.get_thermo("etotal"), 5)
                     #pe = lmp.get_thermo("pe")
                     lmp.close()
         elif "YES" in parallel:
@@ -115,46 +115,44 @@ class SA_REAX_FF(SA):
         ###
         self.__Individual_Energy(parallel = "NO")
         self.cost_function()
-        current_sol = self.sol_
-        cost_old = self.cost_
-        start_time = time.time()
+        current_sol = deepcopy(self.sol_)
+        cost_old = deepcopy(self.cost_)
         if "YES" in record_costs:
-            self.costs[0] = cost_old
+            self.costs.append({temp_key:cost_old[temp_key] for temp_key in cost_old.keys()})
         while self.T > self.T_min:
-            ##
-            print(self.T, time.time() - start_time, accept_rate)
-            ##
             i = 1
             while i <= self.max_iter:
                 for item in self.sol_.keys():
                     self.input_generator(item, update = "YES")
                 self.__Individual_Energy(parallel = "NO")
                 self.cost_function()
-                cost_new = self.cost_
+                cost_new = deepcopy(self.cost_)
                 ap = self.accept_prob(cost_old, cost_new)
                 # counting the total number of steps for all of the annealers
                 tmp_ctrl_step += 1
                 for item in self.sol_.keys():
                     if ap[item] > random.random():
-                        current_sol[item] = self.sol_[item]
-                        cost_old[item] = cost_new[item]
+                        current_sol[item] = deepcopy(self.sol_[item])
+                        cost_old[item] = deepcopy(cost_new[item])
                         # counting total acceptance
                         total_accept += 1
                         #
                     else:
-                        self.cost_[item] = cost_old[item]
-                        self.sol_[item] = current_sol[item]
+                        self.cost_[item] = deepcopy(cost_old[item])
+                        self.sol_[item] = deepcopy(current_sol[item])
                 #  check the acceptance rates at every 100 steps
                 if tmp_ctrl_step == 100:
-                    accept_rate = total_accept / self.number_of_points
+                    ## debug
+                    print(self.T, accept_rate)
+                    ##
+                    accept_rate = total_accept / (self.number_of_points * tmp_ctrl_step)
                     tmp_ctrl_step = 0
                     total_accept = 0
                     if accept_rate > 70:
-                        self.alpha *= 1.2
+                        self.alpha *= 1.1
                     elif accept_rate < 30:
-                        self.alpha /= 1.2
+                        self.alpha /= 1.1
                 i += 1
                 if "YES" in record_costs:
-                    self.costs[i] = cost_old
+                    self.costs.append({temp_key:cost_old[temp_key] for temp_key in cost_old.keys()})
             self.T = self.T * (1 - self.alpha)
-            

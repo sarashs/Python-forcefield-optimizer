@@ -24,9 +24,7 @@ class SA(object):
         Cost calculated by the cost function, needs to be minimized.
     sol_ : list of solution objects for each annealer
         Solution to the cost function.
-    costs : dictionary, 
-        -Keys = iteration
-        -Values = [list of costs]
+    costs : list of dict, 
             Costs over time
     single_best_solution: list,
         Contains the single best solution rom the last set of annealers.
@@ -47,7 +45,7 @@ class SA(object):
         ###### take them to SA REAX
         # this is a list of solutions
         self.sol_= {}#[0] * number_of_points #self.init_ff.selected_parameters_value
-        self.costs = {}
+        self.costs = []
         #Energy per annealer per structure
         self.structure_energies = {}
         self.single_best_solution = []
