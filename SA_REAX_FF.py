@@ -118,10 +118,10 @@ class SA_REAX_FF(SA):
                 if "0" in item:
                     self.reppeling_cost_[item] = 0
                 else:
+                    self.reppeling_cost_[item] = 0
                     for item2 in self.sol_.keys():
                         if (item2 != item):
                             distance = 0
-                            self.reppeling_cost_[item] = 0
                             for param_tuple in self.sol_[item2].param_min_max_delta.keys():
                                 X_1 = self.sol_[item].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]
                                 X_2 = self.sol_[item2].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]
