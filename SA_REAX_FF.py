@@ -67,9 +67,6 @@ class SA_REAX_FF(SA):
             ####
             # save the new forcefield file
             self.sol_[forcefield_name].write_forcefield(self.general_path + forcefield_name)
-            # I think these two neet to be removed
-            #self._Input_data_file_list = list_of_structures(self.Input_structure_file)
-            #self.Training_data = Training_data(self.Training_file)
         elif "NO" in update:
             pass
         else:
@@ -130,9 +127,7 @@ class SA_REAX_FF(SA):
                             # to prevent division by zero we add epsilon
                             self.reppeling_cost_[item] += repelling_weight * 1 / (distance + epsilon)
                     self.cost_[item] +=  self.reppeling_cost_[item]
-                    ###debug
-                    print(item, self.reppeling_cost_[item])
-                    ##
+
     def anneal(self, record_costs = "NO", repelling_weight = 0):
         #Automatic temperature rate control initialize
         tmp_ctrl_step = 0
@@ -143,8 +138,9 @@ class SA_REAX_FF(SA):
         self.cost_function(repelling_weight=repelling_weight)
         current_sol = deepcopy(self.sol_)
         cost_old = deepcopy(self.cost_)
+        reppeling_cost_old = deepcopy(self.reppeling_cost_)
         if "YES" in record_costs:
-            self.costs.append({temp_key:cost_old[temp_key] - self.reppeling_cost_[temp_key] for temp_key in cost_old.keys()})
+            self.costs.append({temp_key:cost_old[temp_key] - reppeling_cost_old[temp_key] for temp_key in cost_old.keys()})
         while self.T > self.T_min:
             i = 1
             while i <= self.max_iter:
@@ -160,10 +156,12 @@ class SA_REAX_FF(SA):
                     if ap[item] > random.random():
                         current_sol[item] = deepcopy(self.sol_[item])
                         cost_old[item] = deepcopy(cost_new[item])
+                        reppeling_cost_old[item] = deepcopy(self.reppeling_cost_[item])
                         # counting total acceptance
                         total_accept += 1
                         #
                     else:
+                        self.reppeling_cost_[item] = deepcopy(reppeling_cost_old[item])
                         self.cost_[item] = deepcopy(cost_old[item])
                         self.sol_[item] = deepcopy(current_sol[item])
                 #  check the acceptance rates at every 100 steps
@@ -176,11 +174,11 @@ class SA_REAX_FF(SA):
 #                    elif accept_rate < 1:
 #                        self.alpha /= 1.1
                 i += 1
-                if "YES" in record_costs:
-                    self.costs.append({temp_key:cost_old[temp_key] - self.reppeling_cost_[temp_key] for temp_key in cost_old.keys()})
+                if "YES" in record_costs:                  
+                    self.costs.append({temp_key:cost_old[temp_key] - reppeling_cost_old[temp_key] for temp_key in cost_old.keys()})
             self.T = self.T * (1 - self.alpha)
             ## debug
-            #print(self.T, total_accept)
+            print(self.T, total_accept)
             ##
         ### writing the best output
         ###removing the repelant costs first
@@ -189,9 +187,6 @@ class SA_REAX_FF(SA):
                 self.cost_[item] -= self.reppeling_cost_[item]
         bestFF_key = min(self.cost_, key = self.cost_.get)
         self.single_best_solution = self.sol_[bestFF_key]
-        ###debug
-        print(bestFF_key)
-        ###
         self.single_best_solution.write_forcefield(self.general_path+"bestFF.reax")
         ###clean up
         for item in self.sol_.keys():
