@@ -33,7 +33,7 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
            atom_type=0
            if '#structure ' in item:
               LAMMPS_Data_file=l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+".data"
-              LAMMPS_Input_file=file_path + l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+".dat"
+              LAMMPS_Input_file=file_path + l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+Input_forcefield.replace('.reax','')+".dat"
               s=open(LAMMPS_Input_file,'w')
               s.close()
               s=open(LAMMPS_Input_file,'a')
@@ -80,7 +80,7 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
               s.write('neigh_modify    every 10 check yes\n\n')
               s.write('## 4.- MD & relax parameters ################\n\n')
               ######
-              s.write('dump DUMP2 all custom 1000000 '+LAMMPS_Data_file.replace('.data','')+'.lammpstrj'+' id type x y z q #this size \n')
+              s.write('dump DUMP2 all custom 1000000 '+LAMMPS_Data_file.replace('.data','')+Input_forcefield.replace('.reax','')+'.lammpstrj'+' id type x y z q #this size \n')
               s.write('thermo_style custom step etotal ke pe temp press pxx pyy pzz \n')
               s.write('thermo 1000000\n')
               #####fix restraints

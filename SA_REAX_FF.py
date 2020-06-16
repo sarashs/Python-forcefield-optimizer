@@ -90,7 +90,7 @@ class SA_REAX_FF(SA):
             for item in self.sol_.keys():
                 for a_file in self.lammps_file_list[item]:
                     lmp = lammps()
-                    lmp.file(self.general_path + a_file)
+                    lmp.file(self.general_path + a_file.replace('.dat', item.replace('.reax','') + '.dat'))
                     self.structure_energies[item][a_file] = round(lmp.get_thermo("etotal"), 5)
                     #pe = lmp.get_thermo("pe")
                     lmp.close()
@@ -123,14 +123,15 @@ class SA_REAX_FF(SA):
                         if (item2 != item):
                             distance = 0
                             for param_tuple in self.sol_[item2].param_min_max_delta.keys():
-                                X_1 = self.sol_[item].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]
-                                X_2 = self.sol_[item2].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]
+                                # divide by max(abs(max,min)) to normalize them
+                                X_1 = self.sol_[item].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]/max(abs(self.sol_[item].param_min_max_delta[param_tuple]['min']),abs(self.sol_[item].param_min_max_delta[param_tuple]['max']))
+                                X_2 = self.sol_[item2].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]/max(abs(self.sol_[item].param_min_max_delta[param_tuple]['min']),abs(self.sol_[item].param_min_max_delta[param_tuple]['max']))
                                 distance += (X_1 - X_2)**2
                             # to prevent division by zero we add epsilon
                             self.reppeling_cost_[item] += repelling_weight * 1 / (distance + epsilon)
                     self.cost_[item] +=  self.reppeling_cost_[item]
                     ###debug
-                    #print(item, self.reppeling_cost_[item])
+                    print(item, self.reppeling_cost_[item])
                     ##
     def anneal(self, record_costs = "NO", repelling_weight = 0):
         #Automatic temperature rate control initialize
@@ -179,7 +180,7 @@ class SA_REAX_FF(SA):
                     self.costs.append({temp_key:cost_old[temp_key] - self.reppeling_cost_[temp_key] for temp_key in cost_old.keys()})
             self.T = self.T * (1 - self.alpha)
             ## debug
-            print(self.T, total_accept)
+            #print(self.T, total_accept)
             ##
         ### writing the best output
         ###removing the repelant costs first
