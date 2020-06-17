@@ -28,6 +28,8 @@ class SA_REAX_FF(SA):
         super().__init__(forcefield_path, output_path, params_path, Training_file, Input_structure_file, T, T_min, Temperature_decreasing_factor, max_iter, number_of_points)
         self.single_best_solution = None
         self.reppeling_cost_ = {}
+        self.charge_cost_ = {}
+        self.energy_cost_ = {}
         # Initial forcefield (initial annealer(s))
         temp_init = REAX_FF(forcefield_path,params_path)
         temp_init.parseParamSelectionFile()
@@ -90,6 +92,7 @@ class SA_REAX_FF(SA):
                     lmp.file(self.general_path + a_file.replace('.dat', item.replace('.reax','') + '.dat'))
                     self.structure_energies[item][a_file] = round(lmp.get_thermo("etotal"), 5)
                     #pe = lmp.get_thermo("pe")
+                    self.structure_charges[item][a_file] = lmp.gather_atoms("charge",1,1)
                     lmp.close()
         elif "YES" in parallel:
             pass
@@ -107,8 +110,13 @@ class SA_REAX_FF(SA):
         for item in self.sol_.keys():
             ##### Cost calculation: For now mean square
             ##### Computing energy
-            self.cost_[item] = self.Training_info.training_energy_weight * sum([trainee[0] * (trainee[1] * self.structure_energies[item][trainee[2] + '.dat']+ trainee[3] * self.structure_energies[item][trainee[4] + '.dat'] - trainee[5]) ** 2 for trainee in self.Training_info.training_energy])
+            self.energy_cost_[item] = self.Training_info.training_energy_weight * sum([trainee[0] * (trainee[1] * self.structure_energies[item][trainee[2] + '.dat'] + trainee[3] * self.structure_energies[item][trainee[4] + '.dat'] - trainee[5]) ** 2 for trainee in self.Training_info.training_energy]) / len(self.Training_info.training_energy)
+            self.cost_[item] = self.energy_cost_[item]
             ##### Computing charge 
+            for trainee in self.Training_info.training_charge:
+                temp_sum = self.Training_info.training_charge_weight * sum([(trainee[0] * (self.structure_charges[item][trainee[1] + '.dat'][ID - 1] - trainee[2][ID])) ** 2 for ID in trainee[2].keys()]) / (len(self.Training_info.training_charge) * len(trainee[2]))
+                self.charge_cost_[item] += temp_sum
+                self.cost_[item] += temp_sum
             ####Applying a repelling potential sum(x**2) where x is the set of optimized parameter
             if repelling_weight != 0:
                 #The potential is not applied to the zeroth annealer but to others'
