@@ -1,9 +1,10 @@
-from random import random
+import os
 from REAX_FF import *
 import numpy as np
-from Training_data import *
+from Training_data import Training_data
 class SA(object):
     """ Simulated Annealing optimizer.
+    I have implemented a simple simulated annealing algorithm which will run on "number_of_point" different annealers and finally picks the best among those.
 
     Parameters
     --------------
@@ -15,28 +16,39 @@ class SA(object):
         temperature scaling factor.
     max_iter: int
         maximum number of iterations per temperature.
-
+    number_of_points: int
+        number of annealers (lammps instances at once)
     Attributes
     --------------
-    cost_ : float
+    cost_ : list of float
         Cost calculated by the cost function, needs to be minimized.
-    sol_ : float
+    sol_ : list of solution objects for each annealer
         Solution to the cost function.
-    costs : list
-        List of costs over time
+    costs : list of dict, 
+            Costs over time
+    single_best_solution: list,
+        Contains the single best solution rom the last set of annealers.
     """
-    def __init__(self,forcefield_path,params_path,Training_file,Input_structure_file,T=1,T_min=0.00001,alpha=0.9,max_iter=50):
+    def __init__(self,forcefield_path,output_path,params_path,Training_file,Input_structure_file,T=1,T_min=0.00001,Temperature_decreasing_factor=0.1,max_iter=50, number_of_points=1):
+        self.general_path = output_path
         self.T=T
-        self.T_min=T_min
-        self.alpha=alpha
-        self.max_iter=max_iter
-        self.Input_structure_file=Input_structure_file
-        self.Training_file=Training_file
-        self.init_ff=REAX_FF(forcefield_path,params_path)
-        self.init_ff.parseParamSelectionFile()
-        self.cost_=0
-        self.sol_=self.init_ff.selected_parameters_value
-        self.energies={}
+        self.T_min = T_min
+        self.alpha = Temperature_decreasing_factor
+        self.max_iter = max_iter
+        self.Input_structure_file = Input_structure_file
+        # Training data for the Energy calculation
+        self.Training_info = Training_data(output_path + Training_file)
+        self.number_of_points = number_of_points
+        #This should be defined for each forcefield separately
+        #self.init_ff= {}
+        self.cost_= {}#[0] * number_of_points
+        ###### take them to SA REAX
+        # this is a list of solutions
+        self.sol_= {}#[0] * number_of_points #self.init_ff.selected_parameters_value
+        self.costs = []
+        #Energy per annealer per structure
+        self.structure_energies = {}
+        self.single_best_solution = None
     def input_generator(self):
         """Generates the next solution.
 
@@ -45,39 +57,23 @@ class SA(object):
         self : object
 
         """
-        for j in range(self.init_ff.param_selected):
-            while True:
-                sol_=self.sol_[j]+ self.init_ff.param_range[j][0]*random()-self.init_ff.param_range[j][0]
-                if sol_ > self.init_ff.param_range[j][1] and sol_ < self.init_ff.param_range[j][2]:
-                    break
-            self.sol_[j]=sol_
-            self.init_ff.params[self.init_ff.param_selection[j][0]][self.init_ff.param_selection[j][1]][self.init_ff.param_selection[j][2]]=self.sol_[j]
-        self.init_ff.write_forcefield("ffsolution.reax")
-        lammps_input_creator(self.Input_structure_file,"ffsolution.reax")
-        self._Input_data_file_list=list_of_structures(self.Input_structure_file)
-        self.Training_data=Training_data(self.Training_file)
+        pass
     def cost_function(self):
-        error=0
-        for i in self._Input_data_file_list:
-            self.energies.update({i: self.__Individual_Energy(i)})
-        for i in self.Training_data:
-            self.cost_+=float(i[0])*(float(i[1])*self.energies[i[2]]-float(i[3])*self.energies[i[4]]-float(i[5]))**2
-
-    def __Individual_Energy(self,lammps_input_file_name):
+        """Computes the cost function.
+        Returns
+        -------
+        self : object
+        
         """
-        Computes the Energy for individual members of population and for individual input file
+        pass
+
+    def __Individual_Energy(self, parallel = "NO"):
+        """
+        Computes the Energy for all members of population and for all input file
         This is a private method that is called by objective function calculator
         :return: float Energy
         """
-
-        #Running lammps and python in serial
-        from lammps import lammps
-        lmp = lammps()
-        lmp.file(lammps_input_file_name)
-        etotal = lmp.get_thermo("etotal")
-        #pe = lmp.get_thermo("pe")
-        lmp.close()
-        return etotal
+        pass
 
     def accept_prob(self,c_old,c_new):
         """Computes the acceptance probability.
@@ -87,29 +83,21 @@ class SA(object):
         self : object
 
         """
-        if -(c_new-c_old)/self.T > 0:
-            ap=1.1 # to deal with
-        else:
-            ap = np.exp(-(c_new-c_old)/self.T)
+        ap = {item : np.exp(- (c_new[item] - c_old[item] ) / self.T) for item in c_old.keys()}
         return ap
-    def anneal(self):
-        self.cost_function()
-        best_sol=self.sol_
-        cost_old=self.cost_
-        self.costs=[cost_old]
-        while self.T > self.T_min:
-            i = 1
-            while i <= self.max_iter:
-                self.input_generator()
-                self.cost_function()
-                cost_new=self.cost_
-                ap=self.accept_prob(cost_old, cost_new)
-                if ap > random():
-                    best_sol=self.sol_
-                    cost_old=cost_new
-                    self.costs.append(cost_new)
-                else:
-                    self.cost_=cost_old
-                    self.sol_=best_sol
-                i += 1
-            self.T = self.T*self.alpha
+    def clean_the_mess(self, names):
+        """finds the single best solution.
+        names : list 
+        contains the name classes that we want to delete
+        
+        Returns
+        -------
+        self : object
+
+        """
+        for item in names:
+            command = "rm " + self.general_path + item + "*"
+            os.system(command)
+        
+    def anneal(self, record_costs = "NO"):
+        pass
