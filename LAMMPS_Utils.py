@@ -14,6 +14,7 @@ LAMMPS utils containing:
     lammps_input_creator : Which prepares the lammps inputfile.dat 
     geofilecreator : Prepares lammps atom files [also known as geometry file] atom.data 
     append_2structure_file : Avogadro xyz to input structure file
+    gaussian_energy_extractor : extracts gaussian log file energies and converts them to kj/mol and eV
 """
 import re
 
@@ -213,3 +214,30 @@ def append_2structure_file(input_files_path, output_files_path, input_xyz_name, 
     S.write(str(box_dim[0]) + " " + str(box_dim[1]) + " " + str(box_dim[2]) + "\n")
     S.writelines(l[2:(2+num_atoms)])
     S.close()
+
+def gaussian_energy_extractor(input_files_path, output_files_path, input_gaussian_file_name, energy_file_name, flag = "HF="):
+    """ This function extracts the structure energies from a gaussian output (.log) file"""
+    if ".log" in input_gaussian_file_name[-4:]:
+        input_gaussian_file_name = input_gaussian_file_name[:-4]
+    if ".txt" in energy_file_name[-4:]:
+        energy_file_name = energy_file_name[:-4]
+    try:
+        f=open(input_files_path + input_gaussian_file_name + ".log",'U')
+        l=f.readlines()
+        f.close()
+    except IOError:
+        print('An error occured trying to read the log file.')
+    for item in l:
+        index = item.find(flag)
+        if index > -1 :
+            item2 = item[index:] 
+            item2 = item2.replace(flag, '')
+            index2 = item2.find("\\")
+            energy = float(item2[:index2])
+            break
+    try:
+        S=open(output_files_path + energy_file_name + ".txt",'a')
+    except IOError:
+        print('The structure (output) file cannot be opened.')
+    S.write(input_gaussian_file_name + "   " + str(energy * 2625.499639479) + "  kJ/mol  " + str(energy * 27.211386245) + "  eV" + "\n")
+    S.close()      
