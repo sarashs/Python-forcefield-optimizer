@@ -96,8 +96,9 @@ class SA(object):
 
         """
         for item in names:
-            command = "rm " + self.general_path + item + "*"
+            command = "rm " + self.general_path + item + ".dat"
             os.system(command)
-        
+            command = "rm " + self.general_path + item + ".data"
+            os.system(command)        
     def anneal(self, record_costs = "NO"):
         pass

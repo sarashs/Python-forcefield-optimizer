@@ -58,8 +58,8 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
     for item in l:
            atom_type=0
            if '#structure ' in item:
-              LAMMPS_Data_file=l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+".data"
-              LAMMPS_Input_file=file_path + l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+Input_forcefield.replace('.reax','')+".dat"
+              LAMMPS_Data_file = file_path + l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+".data"
+              LAMMPS_Input_file = file_path + l[l.index(item)].replace('#structure ','').replace('\n','').replace(' ','')+Input_forcefield.replace('.reax','')+".dat"
               s=open(LAMMPS_Input_file,'w')
               s.close()
               s=open(LAMMPS_Input_file,'a')
@@ -91,7 +91,7 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
               #Forcefield params
               if(Forcefield_type in 'reax'):
                   s.write('pair_style reax/c NULL\n')
-                  s.write('pair_coeff * * '+Input_forcefield)
+                  s.write('pair_coeff * * ' + file_path + Input_forcefield)
               #calculate number of atom types
               for item2 in l[(l.index(item)+3):]:
                  if not ('#dimensions' in item2):
