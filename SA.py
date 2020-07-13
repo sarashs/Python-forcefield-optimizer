@@ -101,6 +101,7 @@ class SA(object):
 #            command = "rm " + self.general_path + item + ".data"
 #            os.system(command)        
         command = "rm " + self.general_path + "*.data"
+        os.system(command) 
         command = "rm " + self.general_path + "*.dat"
         os.system(command)    
     def anneal(self, record_costs = "NO"):
