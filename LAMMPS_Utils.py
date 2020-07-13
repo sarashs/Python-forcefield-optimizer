@@ -117,10 +117,12 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
                             s.write(' '+l[i].replace('\n',''))
                             i=i+1
               s.write('\n')
-              s.write('fix_modify holdem energy yes\n')
+              #This line decides whether or not the fix is going to be in the calculated energy
+              s.write('fix_modify holdem energy yes\n') 
               s.write('min_style cg\n')
-              s.write('minimize 1.0e-7 1.0e-9 20000 20000\n')
+              s.write('minimize 1.0e-12 1.0e-12 20000 200000\n')
               s.write('undump DUMP2\n')
+              s.write('unfix holdem\n')
               s.close()
     f.close()
     return Input_data_file_list
@@ -239,5 +241,5 @@ def gaussian_energy_extractor(input_files_path, output_files_path, input_gaussia
         S=open(output_files_path + energy_file_name + ".txt",'a')
     except IOError:
         print('The structure (output) file cannot be opened.')
-    S.write(input_gaussian_file_name + "   " + str(energy * 2625.499639479) + "  kJ/mol  " + str(energy * 27.211386245) + "  eV" + "\n")
+    S.write(input_gaussian_file_name + "   " + str(energy * 627.5094740631) + "  kcal/mol  " + str(energy * 27.211386245) + "  eV" + "\n")
     S.close()      

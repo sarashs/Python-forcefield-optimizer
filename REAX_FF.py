@@ -120,7 +120,7 @@ class REAX_FF(ForceField):
                          else: temp_line=temp_line+bogus
                     self.params[REAXConstants.OFF_DIAG_NUM][j+1] = list_to_dict(temp_line)
             if ANGLES_flag:
-                self.Num_Of_ANGLES=int("".join(re.findall("\d",line_item[0:ANGLES_flag.span()[0]])))
+                self.Num_Of_ANGLES = int("".join(re.findall("\d",line_item[0:ANGLES_flag.span()[0]])))
                 for j in range(self.Num_Of_ANGLES):
                     temp_line=[]
                     for k in range(1):
@@ -132,7 +132,7 @@ class REAX_FF(ForceField):
                          temp_line=temp_line+bogus[3:]
                     self.params[REAXConstants.ANGLES_NUM][j+1] = list_to_dict(temp_line)
             if TORSIONS_flag:
-                self.Num_Of_TORSIONS=int("".join(re.findall("\d",line_item[0:TORSIONS_flag.span()[0]])))
+                self.Num_Of_TORSIONS = int("".join(re.findall("\d",line_item[0:TORSIONS_flag.span()[0]])))
                 for j in range(self.Num_Of_TORSIONS):
                     temp_line=[]
                     for k in range(1):
@@ -144,7 +144,7 @@ class REAX_FF(ForceField):
                          temp_line=temp_line+bogus[4:]
                     self.params[REAXConstants.TORSIONS_NUM][j+1] = list_to_dict(temp_line)
             if H_BONDS_flag:
-                self.params[7] = {}
+                self.Num_Of_H_BONDS = int("".join(re.findall("\d",line_item[0:H_BONDS_flag.span()[0]])))
                 for j in range(self.Num_Of_H_BONDS):
                     temp_line=[]
                     for k in range(1):
@@ -205,7 +205,7 @@ class REAX_FF(ForceField):
         temp_file.write("  "+str(self.Num_Of_H_BONDS)+"     ! Nr of hydrogen bonds;at1;at2;at3;Rhb;Dehb;vhb1\n")
         if self.Num_Of_H_BONDS>0:
             for i in range(self.Num_Of_H_BONDS):
-                temp_file.write(self.removed_parts_of_FField[i+self.Num_Of_TORSIONS+self.Num_Of_ANGLES+self.Num_Of_OFF_DIAG+self.Num_Of_BONDS*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4]+ "".join(str(j).ljust(10) for j in list(params[REAXConstants.H_BONDS_NUM][i+1]))+"\n")
+                temp_file.write(self.removed_parts_of_FField[i+self.Num_Of_TORSIONS+self.Num_Of_ANGLES+self.Num_Of_OFF_DIAG+self.Num_Of_BONDS*2+self.Num_Of_GENERAL+self.Num_Of_Atoms*4]+ "".join(str(j).ljust(10) for j in list(params[REAXConstants.H_BONDS_NUM][i+1].values()))+"\n")
         temp_file.close()
     def parseParamSelectionFile(self):
         """This file reads the parameter file in
