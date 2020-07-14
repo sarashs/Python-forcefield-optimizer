@@ -112,17 +112,21 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
               #####fix restraints
               i=l.index(item)+atom_type+number_of_atoms+6
               if '#restrain' in l[i-1]:
-                     s.write('fix holdem all restrain')
-                     while i<len(l) and ('#structure ' not in l[i]):
-                            s.write(' '+l[i].replace('\n',''))
-                            i=i+1
-              s.write('\n')
+                  s.write('fix holdem all restrain')
+                  while i<len(l) and ('#structure ' not in l[i]):
+                             s.write(' '+l[i].replace('\n',''))
+                             i=i+1
+                  s.write('\n')
               #This line decides whether or not the fix is going to be in the calculated energy
-              s.write('fix_modify holdem energy yes\n') 
-              s.write('min_style cg\n')
-              s.write('minimize 1.0e-12 1.0e-12 20000 200000\n')
-              s.write('undump DUMP2\n')
-              s.write('unfix holdem\n')
+                  s.write('fix_modify holdem energy yes\n') 
+                  s.write('min_style cg\n')
+                  s.write('minimize 1.0e-12 1.0e-12 20000 200000\n')
+                  s.write('undump DUMP2\n')
+                  s.write('unfix holdem\n')
+              else:
+                  s.write('min_style cg\n')
+                  s.write('minimize 1.0e-12 1.0e-12 20000 200000\n')                  
+                  s.write('undump DUMP2\n')
               s.close()
     f.close()
     return Input_data_file_list

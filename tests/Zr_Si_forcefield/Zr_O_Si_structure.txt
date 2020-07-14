@@ -370,7 +370,7 @@ O 15.9994
 51 H     0     0.01348       -1.43173        3.99773
 #restrain
 angle 1 5 6 2000 2000 138.8
-#structure 3SiOH4_Si_O_Zr_3ZrOH4_B3LYP_138_8_eq
+#structure 3SiOH4_Si_O_Zr_3ZrOH4_B3LYP_138_8
 51
 #weights
 Si 28.0855

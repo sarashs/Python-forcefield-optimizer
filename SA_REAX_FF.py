@@ -186,7 +186,7 @@ class SA_REAX_FF(SA):
                     self.costs.append({temp_key:cost_old[temp_key] - reppeling_cost_old[temp_key] for temp_key in cost_old.keys()})
             self.T = self.T * (1 - self.alpha)
             ## debug
-            print(self.T, total_accept)
+            print(self.T, self.cost_)
             ##
         ### writing the best output
         ###removing the repelant costs first
