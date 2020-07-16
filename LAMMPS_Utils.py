@@ -183,7 +183,7 @@ def geofilecreator(Input_structure_file="Inputstructurefile.txt", file_path = ""
            s.close()
     f.close()
 
-def append_2structure_file(input_files_path, output_files_path, input_xyz_name, structure_file_name, box_dim = [100, 100, 100]):
+def append_2structure_file(input_files_path, output_files_path, input_xyz_name, structure_file_name, box_dim = [100, 100, 100], restrain = "angle 1 5 6 2000 2000\n"):
     """This function reformats and appends a given XYZ file to the input structure file. 
     This function does not add the bond retraints etc.
     :param input_files_path:
@@ -191,6 +191,7 @@ def append_2structure_file(input_files_path, output_files_path, input_xyz_name, 
     :param xyz input file name:
     :param structure file name:
     :param box_dim:[x y z]
+    :param restrain:
     :return: NULL"""
     if ".xyz" in input_xyz_name[-4:]:
         input_xyz_name = input_xyz_name[:-4]
@@ -218,7 +219,14 @@ def append_2structure_file(input_files_path, output_files_path, input_xyz_name, 
         S.write(item + " " + str(atomic_weight_dict[item]) + "\n")
     S.write("#dimensions\n")
     S.write(str(box_dim[0]) + " " + str(box_dim[1]) + " " + str(box_dim[2]) + "\n")
-    S.writelines(l[2:(2+num_atoms)])
+    #S.writelines(l[2:(2+num_atoms)])
+    atom_count = 1
+    for item in l[2:(2+num_atoms)]:
+        atom_type_string = re.match('[a-zA-Z]+' ,item).group(0)
+        S.write(str(atom_count).ljust(4, ' ') + " " + item.replace(atom_type_string, atom_type_string.ljust(4, ' ') + "0"))
+        atom_count += 1
+    S.write('#restrain\n')
+    S.writelines(restrain)
     S.close()
 
 def gaussian_energy_extractor(input_files_path, output_files_path, input_gaussian_file_name, energy_file_name, flag = "HF="):
