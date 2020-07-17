@@ -21,10 +21,11 @@ Training_file = 'Trainingfile.txt'
 Input_structure_file = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/Zr_O_Si_structure.txt'
 output_path = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/'
 geofilecreator(Input_structure_file, output_path)
-a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=100, T_min=10, Temperature_decreasing_factor=0.1, max_iter=15, number_of_points=1)
+a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=0.05, T_min=0.0001, Temperature_decreasing_factor=0.1, max_iter=5, number_of_points=1)
 a.anneal(record_costs = "YES", repelling_weight = 1)
 listaa = [item['annealer_0.reax'] for item in a.costs]
 pylab.plot(listaa)
+
 
 ##For CL
 #ff_filePath = '/home/sarashs/Python-forcefield-optimizer/tests/ffieldoriginal.txt'
