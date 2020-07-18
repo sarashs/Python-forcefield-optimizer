@@ -24,9 +24,10 @@ import random
 #import time
 
 class SA_REAX_FF(SA):
-    def __init__(self,forcefield_path, output_path, params_path, Training_file, Input_structure_file, T=1, T_min=0.00001, Temperature_decreasing_factor=0.1, max_iter=50, number_of_points=1):
+    def __init__(self,forcefield_path, output_path, params_path, Training_file, Input_structure_file, T=1, T_min=0.00001, Temperature_decreasing_factor=0.1, max_iter=50, number_of_points=1, min_style = 'cg'):
         super().__init__(forcefield_path, output_path, params_path, Training_file, Input_structure_file, T, T_min, Temperature_decreasing_factor, max_iter, number_of_points)
         self.single_best_solution = None
+        self.min_style = min_style
         self.reppeling_cost_ = {}
         self.charge_cost_ = {}
         self.energy_cost_ = {}
@@ -40,7 +41,7 @@ class SA_REAX_FF(SA):
         self.sol_[forcefield_name].write_forcefield(self.general_path + forcefield_name)
         self.reppeling_cost_[forcefield_name] = 0
         self.lammps_file_list = {} #dictionary keys: forcefield tag, values: list of lammps files
-        self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, 'reax', self.general_path)
+        self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, self.min_style, 'reax', self.general_path)
         self.structure_energies[forcefield_name] = {} 
         self.structure_charges[forcefield_name] = {} 
         for i in range(1, number_of_points):
@@ -74,7 +75,7 @@ class SA_REAX_FF(SA):
         else:
             raise ValueError("update value for inpute_generator takes YES or NO only!")
         # use the same name for the input structure file
-        self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, 'reax', self.general_path)
+        self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, self.min_style, 'reax', self.general_path)
     def __Individual_Energy(self, parallel = "NO"):
         """
         Computes the Energy for ALL of the annealers and for ALL input file

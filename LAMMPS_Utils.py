@@ -36,7 +36,7 @@ atomic_weight_dict = {"H" : 1.0079, "He" : 4.0026,"Li" : 6.941,"Be" : 9.0122,\
                       "Pt" : 195.078, "Au" : 196.9665, "Hg" : 200.59, "Pb" : 207.2,\
                       "Bi" : 208.9804, "U" : 238.0289}
 
-def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_forcefield='ffield.reax',Forcefield_type = 'reax', file_path = ""):
+def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_forcefield='ffield.reax', min_style = 'cg',Forcefield_type = 'reax', file_path = ""):
     """
     This function creates the lammps input file
     :param Input_structure_file:
@@ -119,13 +119,13 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
                   s.write('\n')
               #This line decides whether or not the fix is going to be in the calculated energy
                   s.write('fix_modify holdem energy yes\n') 
-                  s.write('min_style cg\n')
-                  s.write('minimize 1.0e-12 1.0e-12 20000 200000\n')
+                  s.write('min_style ' + min_style + '\n')
+                  s.write('minimize 1.0e-8 0.0 200000 2000000\n')
                   s.write('undump DUMP2\n')
                   s.write('unfix holdem\n')
               else:
-                  s.write('min_style cg\n')
-                  s.write('minimize 1.0e-12 1.0e-12 20000 200000\n')                  
+                  s.write('min_style ' + min_style + '\n')
+                  s.write('minimize 1.0e-8 0.0 200000 2000000\n')                  
                   s.write('undump DUMP2\n')
               s.close()
     f.close()
