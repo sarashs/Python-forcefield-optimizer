@@ -12,9 +12,10 @@ class GA(object):
     --------------
 
     """
-    def __init__(self, number_of_population):
+    def __init__(self, number_of_population, general_path):
         self.population = {}
         self._cost = {}
+        self.general_path = general_path
         self.number_of_population = number_of_population
    # def fitness_funtion(self,params,param_selection):
 #        for i in self.Input_data_file_list

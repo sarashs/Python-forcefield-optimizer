@@ -64,7 +64,7 @@ class SA_REAX_FF(SA):
             # generate values for selected params
             for param_tuple in self.sol_[forcefield_name].param_min_max_delta.keys():
                 while True:
-                    self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] = round(self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] + random.uniform(-1, 1) * self.sol_[forcefield_name].param_min_max_delta[param_tuple]['delta'], 5)
+                    self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] = round(self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] + random.uniform(-1, 1) * self.sol_[forcefield_name].param_min_max_delta[param_tuple]['delta'], 4)
                     if self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] >= self.sol_[forcefield_name].param_min_max_delta[param_tuple]['min'] and self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] <= self.sol_[forcefield_name].param_min_max_delta[param_tuple]['max']:
                         break
             ####
@@ -76,7 +76,7 @@ class SA_REAX_FF(SA):
             raise ValueError("update value for inpute_generator takes YES or NO only!")
         # use the same name for the input structure file
         self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, self.min_style, 'reax', self.general_path)
-    def __Individual_Energy(self, parallel = "NO"):
+    def Individual_Energy(self, parallel = "NO"):
         """
         Computes the Energy for ALL of the annealers and for ALL input file
         This is a private method that is called by objective function calculator
@@ -98,7 +98,7 @@ class SA_REAX_FF(SA):
         elif "YES" in parallel:
             pass
         else:
-            raise ValueError("parallel value for __Individual_Energy takes YES or NO only!")
+            raise ValueError("parallel value for Individual_Energy takes YES or NO only!")
     def cost_function(self, repelling_weight = 0):
         """Computes the cost function.
         Returns
@@ -143,7 +143,7 @@ class SA_REAX_FF(SA):
         total_accept = 0
         accept_rate = 0
         ###
-        self.__Individual_Energy(parallel = "NO")
+        self.Individual_Energy(parallel = "NO")
         self.cost_function(repelling_weight=repelling_weight)
         current_sol = deepcopy(self.sol_)
         cost_old = deepcopy(self.cost_)
@@ -155,7 +155,7 @@ class SA_REAX_FF(SA):
             while i <= self.max_iter:
                 for item in self.sol_.keys():
                     self.input_generator(item, update = "YES")
-                self.__Individual_Energy(parallel = "NO")
+                self.Individual_Energy(parallel = "NO")
                 self.cost_function(repelling_weight=repelling_weight)
                 cost_new = deepcopy(self.cost_)
                 ap = self.accept_prob(cost_old, cost_new)
@@ -196,12 +196,5 @@ class SA_REAX_FF(SA):
                 self.cost_[item] -= self.reppeling_cost_[item]
         bestFF_key = min(self.cost_, key = self.cost_.get)
         self.single_best_solution = self.sol_[bestFF_key]
-        self.single_best_solution.write_forcefield(self.general_path+"bestFF.reax")
-        ###clean up
-        for item in self.sol_.keys():
-            names_to_be_deleted = []
-            for item2 in self.lammps_file_list[item]:
-                names_to_be_deleted.append(item2[:-4])
-                names_to_be_deleted.append(item[:])
-            self.clean_the_mess(names_to_be_deleted)
-        ####
+        self.sol_[bestFF_key].write_forcefield(self.general_path + bestFF_key)
+        self.single_best_solution.write_forcefield(self.general_path + "bestFF.reax")

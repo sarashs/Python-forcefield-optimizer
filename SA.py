@@ -67,7 +67,7 @@ class SA(object):
         """
         pass
 
-    def __Individual_Energy(self, parallel = "NO"):
+    def Individual_Energy(self, parallel = "NO"):
         """
         Computes the Energy for all members of population and for all input file
         This is a private method that is called by objective function calculator
@@ -85,7 +85,7 @@ class SA(object):
         """
         ap = {item : np.exp(- (c_new[item] - c_old[item] ) / self.T) for item in c_old.keys()}
         return ap
-    def clean_the_mess(self, names):
+    def clean_the_mess(self, lammpstrj = "NO"):
         """finds the single best solution.
         names : list 
         contains the name classes that we want to delete
@@ -95,14 +95,15 @@ class SA(object):
         self : object
 
         """
-#        for item in names:
-#            command = "rm " + self.general_path + item + ".dat"
-#            os.system(command)
-#            command = "rm " + self.general_path + item + ".data"
-#            os.system(command)        
+        for item in self.sol_.keys():
+            command = "rm " + self.general_path + item
+            os.system(command)   
         command = "rm " + self.general_path + "*.data"
         os.system(command) 
         command = "rm " + self.general_path + "*.dat"
-        os.system(command)    
+        os.system(command)
+        if "YES" in lammpstrj:
+            command = "rm " + self.general_path + "*.lammpstrj"
+            os.system(command)  
     def anneal(self, record_costs = "NO"):
         pass

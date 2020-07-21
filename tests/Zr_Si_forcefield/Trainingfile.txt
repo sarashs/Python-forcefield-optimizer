@@ -1,6 +1,6 @@
 ENERGY 1 
-10.0  1*OH4Zr_O_Si_dispersion_140 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.3530
-50.0  1*OH4Zr_O_Si_dispersion_145 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.1912
+50.0  1*OH4Zr_O_Si_dispersion_140 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.3530
+70.0  1*OH4Zr_O_Si_dispersion_145 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.1912
 100.0  1*OH4Zr_O_Si_dispersion_150 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.0834
 100.0  1*OH4Zr_O_Si_dispersion_152 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.0549
 100.0  1*OH4Zr_O_Si_dispersion_155 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.0253
@@ -11,3 +11,4 @@ ENERGY 1
 200.0  1*OH4Zr_O_Si_dispersion_167 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.0052
 100.0  1*OH4Zr_O_Si_dispersion_171 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.0211
 100.0  1*OH4Zr_O_Si_dispersion_175 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.0495
+30.0  1*OH4Zr_O_Si_dispersion_180 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.1000
