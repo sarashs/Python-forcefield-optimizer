@@ -12,3 +12,4 @@ ENERGY 1
 100.0  1*OH4Zr_O_Si_dispersion_171 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.0211
 100.0  1*OH4Zr_O_Si_dispersion_175 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.0495
 30.0  1*OH4Zr_O_Si_dispersion_180 -1*OH4Zr_O_Si_dispersion_162.8_eq 0.1000
+0.0  1*SiO2_cluster_Zr -1*SiO2_cluster 152173.898
