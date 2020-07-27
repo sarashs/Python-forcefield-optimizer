@@ -183,4 +183,4 @@ Reactive MD-force field optimized by GRACE optimization tool
   0  1  1  0 0.0       50.0      0.3       -4.0      -2.0      0.0       0.0       
   0  3  3  0 0.5511    25.415    1.133     -5.1903   -1.0      0.0       0.0       
   1     ! Nr of hydrogen bonds;at1;at2;at3;Rhb;Dehb;vhb1
-  3  2  3   2.0864 -11.3098   0.4733  11.0281 
+  3  2  3   2.0864 -11.3098   0.4733  11.0281  

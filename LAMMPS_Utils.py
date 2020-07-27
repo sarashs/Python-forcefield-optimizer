@@ -110,7 +110,7 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
               s.write('thermo_style custom step etotal ke pe temp press pxx pyy pzz \n')
               s.write('thermo 1000000\n')
               #####fix restraints
-              i=l.index(item)+atom_type+number_of_atoms+6
+              i=l.index(item) + atom_type + number_of_atoms + 6
               if '#restrain' in l[i-1]:
                   s.write('fix holdem all restrain')
                   while i<len(l) and ('#structure ' not in l[i]):
