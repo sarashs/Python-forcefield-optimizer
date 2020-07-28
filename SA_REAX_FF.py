@@ -99,43 +99,6 @@ class SA_REAX_FF(SA):
             pass
         else:
             raise ValueError("parallel value for Individual_Energy takes YES or NO only!")
-    def cost_function(self, repelling_weight = 0):
-        """Computes the cost function.
-        Returns
-        -------
-        self : object
-        
-        """
-        epsilon = 1e-10
-        # decide whether or not to do the charge based on self.training_charge_weight= 0
-        for item in self.sol_.keys():
-            ##### Cost calculation: For now mean square
-            ##### Computing energy
-            self.energy_cost_[item] = self.Training_info.training_energy_weight * sum([trainee[0] * (trainee[1] * self.structure_energies[item][trainee[2] + '.dat'] + trainee[3] * self.structure_energies[item][trainee[4] + '.dat'] - trainee[5]) ** 2 for trainee in self.Training_info.training_energy]) / len(self.Training_info.training_energy)
-            self.cost_[item] = self.energy_cost_[item]
-            ##### Computing charge 
-            for trainee in self.Training_info.training_charge:
-                temp_sum = self.Training_info.training_charge_weight * sum([(trainee[0] * (self.structure_charges[item][trainee[1] + '.dat'][ID - 1] - trainee[2][ID])) ** 2 for ID in trainee[2].keys()]) / (len(self.Training_info.training_charge) * len(trainee[2]))
-                self.charge_cost_[item] += temp_sum
-                self.cost_[item] += temp_sum
-            ####Applying a repelling potential sum(x**2) where x is the set of optimized parameter
-            if repelling_weight != 0:
-                #The potential is not applied to the zeroth annealer but to others'
-                if "0" in item:
-                    self.reppeling_cost_[item] = 0
-                else:
-                    self.reppeling_cost_[item] = 0
-                    for item2 in self.sol_.keys():
-                        if (item2 != item):
-                            distance = 0
-                            for param_tuple in self.sol_[item2].param_min_max_delta.keys():
-                                # divide by max(abs(max,min)) to normalize them
-                                X_1 = self.sol_[item].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]/max(abs(self.sol_[item].param_min_max_delta[param_tuple]['min']),abs(self.sol_[item].param_min_max_delta[param_tuple]['max']))
-                                X_2 = self.sol_[item2].params[param_tuple[0]][param_tuple[1]][param_tuple[2]]/max(abs(self.sol_[item].param_min_max_delta[param_tuple]['min']),abs(self.sol_[item].param_min_max_delta[param_tuple]['max']))
-                                distance += (X_1 - X_2)**2
-                            # to prevent division by zero we add epsilon
-                            self.reppeling_cost_[item] += repelling_weight * 1 / (distance + epsilon)
-                    self.cost_[item] +=  self.reppeling_cost_[item]
 
     def anneal(self, record_costs = "NO", repelling_weight = 0):
         #Automatic temperature rate control initialize
