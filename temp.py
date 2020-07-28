@@ -52,7 +52,7 @@ Training_file = 'Trainingfile_2.txt'
 Input_structure_file = '/home/sarashs/Python-forcefield-optimizer/tests/Inputstructurefile.txt'
 output_path = '/home/sarashs/Python-forcefield-optimizer/tests/'
 geofilecreator(Input_structure_file, output_path)
-a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=1000, T_min=10, Temperature_decreasing_factor=0.1, max_iter=3, number_of_points=1, min_style = 'cg')
+a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=1, T_min=0.1, Temperature_decreasing_factor=0.1, max_iter=3, number_of_points=1, min_style = 'cg')
 a.anneal(record_costs = "YES", repelling_weight = 0)
 a.clean_the_mess(lammpstrj = "YES")
 listaa = [item['annealer_0.reax'] for item in a.costs]
