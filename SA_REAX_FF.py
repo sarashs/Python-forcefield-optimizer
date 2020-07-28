@@ -25,16 +25,10 @@ import random
 
 class SA_REAX_FF(SA):
     def __init__(self,forcefield_path, output_path, params_path, Training_file, Input_structure_file, T=1, T_min=0.00001, Temperature_decreasing_factor=0.1, max_iter=50, number_of_points=1, min_style = 'cg'):
-        super().__init__(forcefield_path, output_path, params_path, Training_file, Input_structure_file, T, T_min, Temperature_decreasing_factor, max_iter, number_of_points)
-        self.single_best_solution = None
-        self.min_style = min_style
-        self.reppeling_cost_ = {}
-        self.charge_cost_ = {}
-        self.energy_cost_ = {}
+        super().__init__(forcefield_path, output_path, params_path, Training_file, Input_structure_file, T, T_min, Temperature_decreasing_factor, max_iter, number_of_points, min_style)
         # Initial forcefield (initial annealer(s))
         temp_init = REAX_FF(forcefield_path,params_path)
         temp_init.parseParamSelectionFile()
-        self.structure_charges = {} 
         forcefield_name = "annealer_" + str(0) + ".reax"
         self.sol_[forcefield_name] = deepcopy(temp_init)
         self.sol_[forcefield_name].ff_filePath = self.general_path + forcefield_name

@@ -31,7 +31,7 @@ import pylab
 #Input_structure_file = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/Zr_O_Si_structure.txt'
 #output_path = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/'
 #geofilecreator(Input_structure_file, output_path)
-#a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=0.011, T_min=0.01, Temperature_decreasing_factor=0.1, max_iter=1, number_of_points=1, min_style = 'cg')
+#a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=1, T_min=0.01, Temperature_decreasing_factor=0.1, max_iter=1, number_of_points=1, min_style = 'cg')
 #a.anneal(record_costs = "YES", repelling_weight = 0)
 ##temp_list = [0.5]*5 + [0.2]*5 + [0.1]*10 + [0.05]*5
 ##for initial_temp in temp_list: #range(30): 
