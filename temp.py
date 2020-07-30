@@ -8,8 +8,8 @@ This is a temporary script file.
 #sys.path.append('../')
 ###Testing the forcefield
 #from REAX_FF import REAX_FF
-from SA_REAX_FF import SA_REAX_FF 
-from GA_REAX_FF import GA_REAX_FF
+from SA import SA_REAX_FF 
+from GA import GA_REAX_FF
 from LAMMPS_Utils import lammps_input_creator, geofilecreator, append_2structure_file, gaussian_energy_extractor
 #from lammps import lammps
 import pylab
