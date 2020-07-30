@@ -63,7 +63,9 @@ def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_for
               s=open(LAMMPS_Input_file,'w')
               s.close()
               s=open(LAMMPS_Input_file,'a')
-              #for n in lists:
+              #for n in lists: 
+              ######
+              s.write('log ' + LAMMPS_Input_file.replace('.dat', '.log') + '\n')
               s.write('# 1.- Inizialization #######################\n')
               s.write('units real\n')
               s.write('  #mass = grams/mole\n')

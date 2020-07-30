@@ -1,7 +1,8 @@
 import os
-from REAX_FF import REAX_FF
+from ForceField import REAX_FF
 import numpy as np
 from Training_data import Training_data
+from lammps import lammps
 class SA(object):
     """ Simulated Annealing optimizer.
     I have implemented a simple simulated annealing algorithm which will run on "number_of_point" different annealers and finally picks the best among those.
@@ -107,11 +108,27 @@ class SA(object):
 
     def Individual_Energy(self, parallel = "NO"):
         """
-        Computes the Energy for all members of population and for all input file
-        This is a private method that is called by objective function calculator
-        :return: float Energy
-        """
-        pass
+        Computes the Energy for ALL of the annealers and for ALL input file
+        This is a public method that is called by objective function calculator
+        :return: 
+        --------
+        self : object
+        
+        """         
+     ####Running lammps and python in serial        
+        if "NO" in parallel:
+            for item in self.sol_.keys():
+                for a_file in self.lammps_file_list[item]:
+                    lmp = lammps()
+                    lmp.file(self.general_path + a_file.replace('.dat', item.replace('.reax','') + '.dat'))
+                    self.structure_energies[item][a_file] = round(lmp.get_thermo("etotal"), 5)
+                    #pe = lmp.get_thermo("pe")
+                    self.structure_charges[item][a_file] = lmp.gather_atoms("charge",1,1)
+                    lmp.close()
+        elif "YES" in parallel:
+            pass
+        else:
+            raise ValueError("parallel value for Individual_Energy takes YES or NO only!")
 
     def accept_prob(self,c_old,c_new):
         """Computes the acceptance probability.
@@ -162,7 +179,6 @@ This is the reax forcefield simulated annealing class. The energy functions and 
 """
 from copy import deepcopy
 from LAMMPS_Utils import lammps_input_creator
-from lammps import lammps
 #from mpi4py import MPI
 import random
 #import time
@@ -214,31 +230,8 @@ class SA_REAX_FF(SA):
             raise ValueError("update value for inpute_generator takes YES or NO only!")
         # use the same name for the input structure file
         self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, self.min_style, 'reax', self.general_path)
-    def Individual_Energy(self, parallel = "NO"):
-        """
-        Computes the Energy for ALL of the annealers and for ALL input file
-        This is a private method that is called by objective function calculator
-        :return: 
-        --------
-        self : object
-        
-        """         
-     ####Running lammps and python in serial        
-        if "NO" in parallel:
-            for item in self.sol_.keys():
-                for a_file in self.lammps_file_list[item]:
-                    lmp = lammps()
-                    lmp.file(self.general_path + a_file.replace('.dat', item.replace('.reax','') + '.dat'))
-                    self.structure_energies[item][a_file] = round(lmp.get_thermo("etotal"), 5)
-                    #pe = lmp.get_thermo("pe")
-                    self.structure_charges[item][a_file] = lmp.gather_atoms("charge",1,1)
-                    lmp.close()
-        elif "YES" in parallel:
-            pass
-        else:
-            raise ValueError("parallel value for Individual_Energy takes YES or NO only!")
 
-    def anneal(self, record_costs = "NO", repelling_weight = 0):
+    def anneal(self, record_costs = "NO", repelling_weight = 0, parallel = 'NO'):
         #Automatic temperature rate control initialize
         tmp_ctrl_step = 0
         total_accept = 0
@@ -256,7 +249,7 @@ class SA_REAX_FF(SA):
             while i <= self.max_iter:
                 for item in self.sol_.keys():
                     self.input_generator(item, update = "YES")
-                self.Individual_Energy(parallel = "NO")
+                self.Individual_Energy(parallel)
                 self.cost_function(repelling_weight=repelling_weight)
                 cost_new = deepcopy(self.cost_)
                 ap = self.accept_prob(cost_old, cost_new)
