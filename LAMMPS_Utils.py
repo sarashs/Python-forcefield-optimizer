@@ -17,6 +17,7 @@ LAMMPS utils containing:
     gaussian_energy_extractor : extracts gaussian log file energies and converts them to kj/mol and eV
 """
 import re
+from lammps import lammps
 
 atomic_weight_dict = {"H" : 1.0079, "He" : 4.0026,"Li" : 6.941,"Be" : 9.0122,\
                       "B" : 10.811, "C" : 12.0107,"N" : 14.0067,"O" : 15.9994,\
@@ -259,3 +260,16 @@ def gaussian_energy_extractor(input_files_path, output_files_path, input_gaussia
         print('The structure (output) file cannot be opened.')
     S.write(input_gaussian_file_name + "   " + str(energy * 627.5094740631) + "  kcal/mol  " + str(energy * 27.211386245) + "  eV" + "\n")
     S.close()      
+    
+def energy_charge(x):
+    """ This function outputs the charge and energy for a lammps simulations
+    :param x: input file name with path
+    :return energy:
+    :return charge:
+    """
+    lmp = lammps()
+    lmp.file(x)
+    energy = round(lmp.get_thermo("etotal"), 5)
+    charge = lmp.gather_atoms("charge",1,1)
+    lmp.close()
+    return [energy, charge]

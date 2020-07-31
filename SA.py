@@ -2,7 +2,9 @@ import os
 from ForceField import REAX_FF
 import numpy as np
 from Training_data import Training_data
-from lammps import lammps
+from LAMMPS_Utils import energy_charge
+from multiprocessing import Pool
+
 class SA(object):
     """ Simulated Annealing optimizer.
     I have implemented a simple simulated annealing algorithm which will run on "number_of_point" different annealers and finally picks the best among those.
@@ -105,8 +107,7 @@ class SA(object):
                             # to prevent division by zero we add epsilon
                             self.reppeling_cost_[item] += repelling_weight * 1 / (distance + epsilon)
                     self.cost_[item] +=  self.reppeling_cost_[item]
-
-    def Individual_Energy(self, parallel = "NO"):
+    def Individual_Energy(self, parallel="NO", processors=1):
         """
         Computes the Energy for ALL of the annealers and for ALL input file
         This is a public method that is called by objective function calculator
@@ -119,12 +120,7 @@ class SA(object):
         if "NO" in parallel:
             for item in self.sol_.keys():
                 for a_file in self.lammps_file_list[item]:
-                    lmp = lammps()
-                    lmp.file(self.general_path + a_file.replace('.dat', item.replace('.reax','') + '.dat'))
-                    self.structure_energies[item][a_file] = round(lmp.get_thermo("etotal"), 5)
-                    #pe = lmp.get_thermo("pe")
-                    self.structure_charges[item][a_file] = lmp.gather_atoms("charge",1,1)
-                    lmp.close()
+                    self.structure_energies[item][a_file], self.structure_charges[item][a_file] = energy_charge(self.general_path + a_file.replace('.dat', item.replace('.reax','') + '.dat'))
         elif "YES" in parallel:
             pass
         else:
@@ -231,13 +227,13 @@ class SA_REAX_FF(SA):
         # use the same name for the input structure file
         self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, self.min_style, 'reax', self.general_path)
 
-    def anneal(self, record_costs = "NO", repelling_weight = 0, parallel = 'NO'):
+    def anneal(self, record_costs = "NO", repelling_weight = 0, parallel = 'NO', processors = 1):
         #Automatic temperature rate control initialize
         tmp_ctrl_step = 0
         total_accept = 0
         accept_rate = 0
         ###
-        self.Individual_Energy(parallel = "NO")
+        self.Individual_Energy(parallel, processors)
         self.cost_function(repelling_weight=repelling_weight)
         current_sol = deepcopy(self.sol_)
         cost_old = deepcopy(self.cost_)
@@ -249,7 +245,7 @@ class SA_REAX_FF(SA):
             while i <= self.max_iter:
                 for item in self.sol_.keys():
                     self.input_generator(item, update = "YES")
-                self.Individual_Energy(parallel)
+                self.Individual_Energy(parallel, processors)
                 self.cost_function(repelling_weight=repelling_weight)
                 cost_new = deepcopy(self.cost_)
                 ap = self.accept_prob(cost_old, cost_new)
