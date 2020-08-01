@@ -54,48 +54,18 @@ Input_structure_file = '/home/sarashs/Python-forcefield-optimizer/tests/Inputstr
 output_path = '/home/sarashs/Python-forcefield-optimizer/tests/'
 geofilecreator(Input_structure_file, output_path)
 
-#a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=0.2, T_min=0.1, Temperature_decreasing_factor=0.1, max_iter=3, number_of_points=1, min_style = 'cg')
-#startTime = datetime.now()
-#a.anneal(record_costs = "YES", repelling_weight = 0)
+a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=0.2, T_min=0.1, Temperature_decreasing_factor=0.1, max_iter=3, number_of_points=1, min_style = 'cg', processors = 6)
+startTime = datetime.now()
+for i in range(5):
+    a.anneal(record_costs = "YES", repelling_weight = 0, parallel = 'NO')
 ##g = GA_REAX_FF.from_forcefield_list(a.sol_, a.cost_, output_path)
 ##g.next_generation(5, Keep_the_best = "YES", mode = "average")
-##a.T = 0.2
-#a.anneal(record_costs = "YES", repelling_weight = 0)
-#print(datetime.now() - startTime)
-#a.clean_the_mess(lammpstrj = "YES")
-#listaa = [item['annealer_0.reax'] for item in a.costs]
-#pylab.plot(listaa)
-
-#from lammps import lammps
-#
-#from multiprocessing import Pool, cpu_count
-#from datetime import datetime
-#
-#def f(x):
-#    lmp = lammps()
-#    lmp.file(x)
-#    e = round(lmp.get_thermo("etotal"), 5)
-#    c = round(lmp.gather_atoms("charge",1,1), 5)
-#    lmp.close()
-#    return e
-#
-#print(cpu_count())
-#p = Pool(cpu_count())
-#
-#startTime = datetime.now()
-#for i in range(10):
-#    p.map(f, [output_path+'Cl2_Optannealer_0.dat',output_path+'Cl2_314annealer_0.dat',output_path+'Cl2_214annealer_0.dat',output_path+'Cl2_304annealer_0.dat',output_path+'Cl2_144annealer_0.dat',output_path+'Cl2_154annealer_0.dat', output_path+'Cl2_Optannealer_0.dat',output_path+'Cl2_164annealer_0.dat',output_path+'Cl2_174annealer_0.dat',output_path+'Cl2_184annealer_0.dat',output_path+'Cl2_194annealer_0.dat',output_path+'Cl2_204annealer_0.dat'])
-#print(datetime.now() - startTime)
-#
-#
-#startTime = datetime.now()
-#for i in range(10):
-#    for x in [output_path+'Cl2_Optannealer_0.dat',output_path+'Cl2_314annealer_0.dat',output_path+'Cl2_214annealer_0.dat',output_path+'Cl2_304annealer_0.dat',output_path+'Cl2_144annealer_0.dat',output_path+'Cl2_154annealer_0.dat', output_path+'Cl2_Optannealer_0.dat',output_path+'Cl2_164annealer_0.dat',output_path+'Cl2_174annealer_0.dat',output_path+'Cl2_184annealer_0.dat',output_path+'Cl2_194annealer_0.dat',output_path+'Cl2_204annealer_0.dat']:
-#        e = f(x)
-#print(datetime.now() - startTime)
-
-#listab = [item['annealer_1.reax'] for item in a.costs]
-#pylab.plot(listab)
+    a.T = 0.2
+##a.anneal(record_costs = "YES", repelling_weight = 0, parallel = 'NO')
+a.clean_the_mess(lammpstrj = "YES")
+print(datetime.now() - startTime)
+listaa = [item['annealer_0.reax'] for item in a.costs]
+pylab.plot(listaa)
 
 ##create the input_structure_file
 #import os

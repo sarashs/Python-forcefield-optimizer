@@ -32,7 +32,7 @@ class SA(object):
     single_best_solution: list,
         Contains the single best solution rom the last set of annealers.
     """
-    def __init__(self,forcefield_path,output_path,params_path,Training_file,Input_structure_file,T=1,T_min=0.00001,Temperature_decreasing_factor=0.1,max_iter=50, number_of_points=1, min_style = 'cg', processor=0):
+    def __init__(self,forcefield_path,output_path,params_path,Training_file,Input_structure_file,T=1,T_min=0.00001,Temperature_decreasing_factor=0.1,max_iter=50, number_of_points=1, min_style = 'cg', processors=0):
         self.general_path = output_path
         self.min_style = min_style
         self.single_best_solution = None
@@ -57,10 +57,8 @@ class SA(object):
         #Energy per annealer per structure
         self.structure_energies = {}
         self.structure_charges = {} 
-        self.number_of_processors = processor
-        if processor == 0:
-            self.number_of_processors = cpu_count()
-            print('The chosen number of processors is 0. Defaulting to maximum available which is %d .' %self.number_of_processors)
+        self.number_of_processors = processors
+    
     def input_generator(self):
         """Generates the next solution.
 
@@ -111,7 +109,7 @@ class SA(object):
                             # to prevent division by zero we add epsilon
                             self.reppeling_cost_[item] += repelling_weight * 1 / (distance + epsilon)
                     self.cost_[item] +=  self.reppeling_cost_[item]
-    def Individual_Energy(self, parallel="NO"):
+    def Individual_Energy(self, parallel="NO", p=None):
         """
         Computes the Energy for ALL of the annealers and for ALL input file
         This is a public method that is called by objective function calculator
@@ -128,11 +126,13 @@ class SA(object):
         elif "YES" in parallel:
             ####Running lammps in serial but in multiple instances on each processor  
             for item in self.sol_.keys():
-                list_of_files = [self.general_path + a_file.replace('.dat', item.replace('.reax','') + '.dat') for a_file in self.lammps_file_list[item].keys()]
-                p = Pool(processes=self.number_of_processors)
+                list_of_files = [self.general_path + a_file.replace('.dat', item.replace('.reax','') + '.dat') for a_file in self.lammps_file_list[item]]
+                #p = Pool(processes=self.number_of_processors)
                 output = p.map(energy_charge, list_of_files)
-                self.structure_energies[item] = dict(zip(self.lammps_file_list[item].keys(), i[0] for i in output))
-                self.structure_charges[item] = dict(zip(self.lammps_file_list[item].keys(), i[1] for i in output))
+                self.structure_energies[item] = dict(zip(self.lammps_file_list[item], [i[0] for i in output]))
+                self.structure_charges[item] = dict(zip(self.lammps_file_list[item], [i[1] for i in output]))
+                #p.close()
+                #p.join()
         else:
             raise ValueError("parallel value for Individual_Energy takes YES or NO only!")
 
@@ -190,8 +190,8 @@ import random
 #import time
 
 class SA_REAX_FF(SA):
-    def __init__(self,forcefield_path, output_path, params_path, Training_file, Input_structure_file, T=1, T_min=0.00001, Temperature_decreasing_factor=0.1, max_iter=50, number_of_points=1, min_style = 'cg'):
-        super().__init__(forcefield_path, output_path, params_path, Training_file, Input_structure_file, T, T_min, Temperature_decreasing_factor, max_iter, number_of_points, min_style)
+    def __init__(self,forcefield_path, output_path, params_path, Training_file, Input_structure_file, T=1, T_min=0.00001, Temperature_decreasing_factor=0.1, max_iter=50, number_of_points=1, min_style = 'cg', processors = 0):
+        super().__init__(forcefield_path, output_path, params_path, Training_file, Input_structure_file, T, T_min, Temperature_decreasing_factor, max_iter, number_of_points, min_style, processors)
         # Initial forcefield (initial annealer(s))
         temp_init = REAX_FF(forcefield_path,params_path)
         temp_init.parseParamSelectionFile()
@@ -203,7 +203,7 @@ class SA_REAX_FF(SA):
         self.lammps_file_list = {} #dictionary keys: forcefield tag, values: list of lammps files
         self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, self.min_style, 'reax', self.general_path)
         ### update the number of processors accordingly
-        if processors < len(self.lammps_file_list[forcefield_name]):
+        if processors > len(self.lammps_file_list[forcefield_name]):
             self.number_of_processors = len(self.lammps_file_list[forcefield_name])
             print('The requested number of processors was reduced to %d for efficiency.' %self.number_of_processors)
         ###
@@ -242,13 +242,19 @@ class SA_REAX_FF(SA):
         # use the same name for the input structure file
         self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, self.min_style, 'reax', self.general_path)
 
-    def anneal(self, record_costs = "NO", repelling_weight = 0, parallel = 'NO', processors = 1):
+    def anneal(self, record_costs = "NO", repelling_weight = 0, parallel = 'NO'):
         #Automatic temperature rate control initialize
         tmp_ctrl_step = 0
         total_accept = 0
         accept_rate = 0
         ###
-        self.Individual_Energy(parallel)
+        # Parallezization setup
+        if 'YES' in parallel:
+            p = Pool(processes=self.number_of_processors)
+        else:
+            p = None
+        ###
+        self.Individual_Energy(parallel, p)
         self.cost_function(repelling_weight=repelling_weight)
         current_sol = deepcopy(self.sol_)
         cost_old = deepcopy(self.cost_)
@@ -260,7 +266,7 @@ class SA_REAX_FF(SA):
             while i <= self.max_iter:
                 for item in self.sol_.keys():
                     self.input_generator(item, update = "YES")
-                self.Individual_Energy(parallel)
+                self.Individual_Energy(parallel, p)
                 self.cost_function(repelling_weight=repelling_weight)
                 cost_new = deepcopy(self.cost_)
                 ap = self.accept_prob(cost_old, cost_new)
@@ -294,6 +300,11 @@ class SA_REAX_FF(SA):
             ## debug
             print(self.T, self.cost_)
             ##
+        # Parallezization setup
+        if 'YES' in parallel:
+            p.close()
+            p.join()
+        ###
         ### writing the best output
         ###removing the repelant costs first
         if repelling_weight != 0:

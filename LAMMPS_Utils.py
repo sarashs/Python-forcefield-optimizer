@@ -272,4 +272,4 @@ def energy_charge(x):
     energy = round(lmp.get_thermo("etotal"), 5)
     charge = lmp.gather_atoms("charge",1,1)
     lmp.close()
-    return [energy, charge]
+    return [energy, [charge[0], charge[1]]]
