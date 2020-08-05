@@ -37,6 +37,8 @@ atomic_weight_dict = {"H" : 1.0079, "He" : 4.0026,"Li" : 6.941,"Be" : 9.0122,\
                       "Pt" : 195.078, "Au" : 196.9665, "Hg" : 200.59, "Pb" : 207.2,\
                       "Bi" : 208.9804, "U" : 238.0289}
 
+atomic_number_dict = {'1' : 'H' , '8' : 'O' , '14' : 'Si' , '40' : 'Zr' }
+
 def lammps_input_creator(Input_structure_file="Inputstructurefile.txt",Input_forcefield='ffield.reax', min_style = 'cg',Forcefield_type = 'reax', file_path = ""):
     """
     This function creates the lammps input file
@@ -257,10 +259,41 @@ def gaussian_energy_extractor(input_files_path, output_files_path, input_gaussia
     try:
         S=open(output_files_path + energy_file_name + ".txt",'a')
     except IOError:
-        print('The structure (output) file cannot be opened.')
+        print('An output file cannot be created.')
     S.write(input_gaussian_file_name + "   " + str(energy * 627.5094740631) + "  kcal/mol  " + str(energy * 27.211386245) + "  eV" + "\n")
     S.close()      
     
+def gaussian_xyz_extractor(input_files_path, input_gaussian_file_name):
+    """ This function extracts the structures .xyz from a gaussian output (.log) file"""
+    if ".log" in input_gaussian_file_name[-4:]:
+        input_gaussian_file_name = input_gaussian_file_name[:-4]
+    try:
+        f = open(input_files_path + input_gaussian_file_name + ".log",'U')
+        l = f.readlines()
+        lines = f.read()
+        f.close()
+        ###finding where the atoms start
+        locations = [i for i in range(len(l)) if l[i].find("Standard orientation:") > -1]
+        index = locations[-1] + 5
+    except IOError:
+        print('An error occured trying to read the log file.')    
+    try:
+        S=open(input_files_path + input_gaussian_file_name + ".xyz",'a')
+    except IOError:
+        print('The structure (xyz) file cannot be opened.')   
+    ###add the file manipulation code here
+    to_be_written = []
+    while index > -1:
+        to_be_written.append(re.sub("\s+", ",", l[index].strip()).split(','))
+        if to_be_written[-1][0].isdigit():
+            index += 1 
+        else:
+            del to_be_written[-1]
+            index = -1
+    S.write(str(len(to_be_written)) + '\n\n')
+    for item in to_be_written:
+        S.write(atomic_number_dict[item[1]] + ' 0 ' + item[3] + item[4] + item[5] + '\n')
+    S.close()
 def energy_charge(x):
     """ This function outputs the charge and energy for a lammps simulations
     :param x: input file name with path

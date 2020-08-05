@@ -1,3 +1,6 @@
+import REAXConstants 
+import re
+
 class ForceField(object):
     """General forcefield class, other forcefield classes are a subclass of this one
     Attributes:
@@ -7,24 +10,19 @@ class ForceField(object):
    """
     def __init__(self, ff_filepath_input ,ParamSelect_filePath_input):
         """ff_filepath_input and ParamSelect_filePath_input are strings."""
-        self.params={}
-        self.param_selection=[]
-        self.param_min_max_delta={}
+        self.params = {}
+        self.param_selection = []
+        self.param_min_max_delta = {}
         # dictionary {(tuple): {min: val, max: val, delta: val}}
-        self.param_selected=0
-        self.ff_filePath=ff_filepath_input
-        self.ParamSelect_filePath=ParamSelect_filePath_input
+        self._param_selected = 0
+        self.ff_filePath = ff_filepath_input
+        self.ParamSelect_filePath = ParamSelect_filePath_input
         #self.item_number=[]
-    def parseFile(self):
-        pass
-    def updateFile(self):
+    def write_forcefield(self):
         pass
     def parseParamSelectionFile(self):
         pass
     
-    
-import REAXConstants 
-import re
 def list_to_dict(input_list):
     length = len(input_list)
     return {(i+1):input_list[i] for i in range(length)}
@@ -239,13 +237,13 @@ class REAX_FF(ForceField):
         try:
             temp_file = open(self.ParamSelect_filePath,"r")
             self.Param_read=temp_file.readlines()
-            self.param_selected=len(self.Param_read)
+            self._param_selected=len(self.Param_read)
         except IOError:
             print('An error occured trying to read the param file.')
         self.Param_read=[i.replace("\n","").split(" ") for i in self.Param_read]
-        for j in range(self.param_selected):
+        for j in range(self._param_selected):
             while '' in self.Param_read[j]: self.Param_read[j].remove('')
-        for i in range(self.param_selected):
+        for i in range(self._param_selected):
             temp_tuple = (int(self.Param_read[i][0]), int(self.Param_read[i][1]), int(self.Param_read[i][2]))
             self.param_selection.append(temp_tuple)
             self.param_min_max_delta[temp_tuple] = {'delta' : float(self.Param_read[i][3]), 'min': float(self.Param_read[i][4]), 'max': float(self.Param_read[i][5])}
