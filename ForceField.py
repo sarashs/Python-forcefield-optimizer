@@ -12,12 +12,10 @@ class ForceField(object):
         """ff_filepath_input and ParamSelect_filePath_input are strings."""
         self.params = {}
         self.param_selection = []
-        self.param_min_max_delta = {}
-        # dictionary {(tuple): {min: val, max: val, delta: val}}
+        self.param_min_max_delta = {} # dictionary {(tuple): {min: val, max: val, delta: val}}
         self._param_selected = 0
         self.ff_filePath = ff_filepath_input
         self.ParamSelect_filePath = ParamSelect_filePath_input
-        #self.item_number=[]
     def write_forcefield(self):
         pass
     def parseParamSelectionFile(self):
@@ -195,7 +193,7 @@ class REAX_FF(ForceField):
             temp_file = open(Out_ff_filePath,"w")
         except IOError:
             print('An error occured trying to write the forcefield file.')
-        temp_file.write("Reactive MD-force field optimized by GRACE optimization tool\n")
+        temp_file.write("This force field optimized by Pyfield optimization tool\n")
         temp_file.write(" "+str(self.Num_Of_GENERAL)+"       ! Number of general parameters\n")
         for i in range(self.Num_Of_GENERAL):
             temp_file.write(self.removed_parts_of_FField[i][0]+str(params[REAXConstants.GENERAL_NUM][i+1][1]).ljust(8)+self.removed_parts_of_FField[i][1]+"\n")

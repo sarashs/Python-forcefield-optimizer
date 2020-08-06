@@ -232,7 +232,7 @@ def append_2structure_file(input_files_path, output_files_path, input_xyz_name, 
         atom_count += 1
     S.write('#restrain\n')
     for item in restrain:
-        S.write(restrain)
+        S.write(item)
         S.write('\n')
     S.close()
 
@@ -270,7 +270,7 @@ def gaussian_xyz_extractor(input_files_path, input_gaussian_file_name):
     try:
         f = open(input_files_path + input_gaussian_file_name + ".log",'U')
         l = f.readlines()
-        lines = f.read()
+        #lines = f.read()
         f.close()
         ###finding where the atoms start
         locations = [i for i in range(len(l)) if l[i].find("Standard orientation:") > -1]
@@ -292,7 +292,7 @@ def gaussian_xyz_extractor(input_files_path, input_gaussian_file_name):
             index = -1
     S.write(str(len(to_be_written)) + '\n\n')
     for item in to_be_written:
-        S.write(atomic_number_dict[item[1]] + ' 0 ' + item[3] + item[4] + item[5] + '\n')
+        S.write(atomic_number_dict[item[1]].ljust(4, ' ') + item[3].ljust(4, ' ') + item[4].ljust(4, ' ') + item[5].ljust(4, ' ') + '\n')
     S.close()
 def energy_charge(x):
     """ This function outputs the charge and energy for a lammps simulations
