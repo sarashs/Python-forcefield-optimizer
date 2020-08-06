@@ -1,0 +1,25 @@
++++Pyfield_parameters
+structure_file_path  
+forecfield_file_path 
+parameter_file_path 
+output_path 
+log_everything NO  # YES or NO
+save_lammps_trajectory NO #or YES
+Parallel NO # YES or NO
+Number_of_processors 1 
++++Optimizatoin_parameters
+simulated_annealing YES # YES or NO
+Genetic_Algorithm NO # YES or NO
+++simulated_annealing_parameters
+number_of_annealers 1
+coulomb_repelling_force_between_annealers OFF # ON or OFF
+Initial_temperature 10 # could be anything
+Final_temperature 0.01 # could be anything
+++genetic_algorithm parametes
+keep_the_best YES # or NO
+mode average # other modes are not implemented
+number_of_generations 5 #maximum 99
+initial_temp_list 1, 0.1, 0.1, 0.05, 0.05 #this is optional and should match the number of generations
++++LAMMPS_parameters
+minimization cg # Lammps minimization protocol
+box_dimentions 100 100 100 # dimensions of the simulation box
