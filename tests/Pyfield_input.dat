@@ -1,8 +1,8 @@
 +++Pyfield_parameters
-structure_file_path  
-forecfield_file_path 
-parameter_file_path 
-output_path 
+structure_file_path /somepath/st.txt 
+forecfield_file_path /another_path/ff.reax 
+parameter_file_path /yet_another_path/param
+output_path /more_path/
 log_everything NO  # YES or NO
 save_lammps_trajectory NO #or YES
 Parallel NO # YES or NO
@@ -19,7 +19,7 @@ Final_temperature 0.01 # could be anything
 keep_the_best YES # or NO
 mode average # other modes are not implemented
 number_of_generations 5 #maximum 99
-initial_temp_list 1, 0.1, 0.1, 0.05, 0.05 #this is optional and should match the number of generations
+initial_temp_list 1,0.1,0.1,0.05,0.05 #this is optional and should match the number of generations
 +++LAMMPS_parameters
 minimization cg # Lammps minimization protocol
-box_dimentions 100 100 100 # dimensions of the simulation box
+box_dimentions 100,100,100 # dimensions of the simulation box has to be integer
