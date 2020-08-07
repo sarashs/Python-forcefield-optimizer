@@ -45,7 +45,7 @@ class SA(object):
         self.max_iter = max_iter
         self.Input_structure_file = Input_structure_file
         # Training data for the Energy calculation
-        self.Training_info = Training_data(output_path + Training_file)
+        self.Training_info = Training_data(Training_file)
         self.number_of_points = number_of_points
         #This should be defined for each forcefield separately
         #self.init_ff= {}

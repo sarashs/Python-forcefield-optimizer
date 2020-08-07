@@ -16,7 +16,8 @@ from datetime import datetime
 import pylab
 #from mpi4py import MPI
 
-#
+"""Training data is now + path"""
+
 #ff_filePath = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/ffield2.reax'
 #ParamSelect_filePath = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/params'
 #Training_file = 'Trainingfile.txt'

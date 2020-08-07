@@ -8,6 +8,10 @@ Created on Wed Aug  5 13:06:23 2020
 
 import sys
 from os import getcwd, path
+from SA import SA_REAX_FF 
+from GA import GA_REAX_FF
+from LAMMPS_Utils import geofilecreator
+import pylab
 
 def isfloat(value):
   try:
@@ -19,11 +23,11 @@ def isfloat(value):
 cwd = getcwd()
 input_file_path = path.join(cwd, sys.argv[1]) 
 arguments ={'Pyfield_parameters': {'structure_file_path' : '', 'forecfield_file_path' : '', 'parameter_file_path' : '', 'output_path' : '',\
-                'log_everything' : '', 'save_lammps_trajectory' : '', 'Parallel' : 'NO', 'Number_of_processors' : 1 },\
-                'Optimizatoin_parameters' : {'simulated_annealing_parameters' : {'number_of_annealers' : 1, 'coulomb_repelling_force_between_annealers' : 'OFF',\
-                                            'Initial_temperature' : 10, 'Final_temperature' : 0.0001}, 'genetic_algorithm parametes' : {'keep_the_best' : 'YES'},\
-                                            'mode' : 'average', 'number_of_generations' : 5, 'initial_temp_list' : [1, 0.5, 0.1, 0.05, 0.05]},\
-                'LAMMPS_parameters' : {'minimization' : 'cg', 'box_dimentions': [100, 100, 100]}}
+                'Training_file_path' : '', 'log_everything' : '', 'save_lammps_trajectory' : '', 'Parallel' : 'NO', 'Number_of_processors' : 1 },\
+                'Optimizatoin_parameters' : {'simulated_annealing_parameters' : {'simulated_annealing' : 'YES', 'number_of_annealers' : 1, 'coulomb_repelling_force_between_annealers' : 'OFF',\
+                                            'Initial_temperature' : 10, 'Final_temperature' : 0.0001, 'Temperature_decreasing_factor' : 0.1, 'Maximum_number_of_iterations' : 3},\
+                                            'genetic_algorithm parametes' : {'Genetic_Algorithm' : 'NO', 'keep_the_best' : 'YES', 'mode' : 'average', 'number_of_generations' : 5,\
+                                            'initial_temp_list' : [1, 0.5, 0.1, 0.05, 0.05]}}, 'LAMMPS_parameters' : {'minimization' : 'cg', 'box_dimentions': [100, 100, 100]}}
 
 try:
     input_file = open(input_file_path)
@@ -56,12 +60,14 @@ for item in lines:
     elif key_3_plus == 'Optimizatoin_parameters':
         if 'initial_temp_list' in cleaned_item.split(' ')[0]:
             temp = cleaned_item.split(' ')[1].split(',')
-            arguments[key_3_plus][key_2_plus][cleaned_item.split(' ')[0]] = [isfloat(i) for i in temp]
+            arguments[key_3_plus][key_2_plus][cleaned_item.split(' ')[0]] = [float(i) for i in temp]
         else:
             if cleaned_item.split(' ')[1].isdigit():
                 arguments[key_3_plus][key_2_plus][cleaned_item.split(' ')[0]] = int(cleaned_item.split(' ')[1])
             elif isfloat(cleaned_item.split(' ')[1]):
                 arguments[key_3_plus][key_2_plus][cleaned_item.split(' ')[0]] = float(cleaned_item.split(' ')[1])
+            else:
+                arguments[key_3_plus][key_2_plus][cleaned_item.split(' ')[0]] = cleaned_item.split(' ')[1]
     else:
         if 'box_dimentions' in cleaned_item.split(' ')[0]:
             temp = cleaned_item.split(' ')[1].split(',')
@@ -71,3 +77,26 @@ for item in lines:
                 arguments[key_3_plus][cleaned_item.split(' ')[0]] = int(cleaned_item.split(' ')[1])
             elif isfloat(cleaned_item.split(' ')[1]):
                 arguments[key_3_plus][cleaned_item.split(' ')[0]] = float(cleaned_item.split(' ')[1])
+            else:
+                arguments[key_3_plus][cleaned_item.split(' ')[0]] = cleaned_item.split(' ')[1]
+print("Your input parameters: \n\n")
+print(arguments)
+print("\n\n")
+# for annealing
+if arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['simulated_annealing'].upper() == 'YES':  
+    geofilecreator(arguments['Pyfield_parameters']['structure_file_path'], arguments['Pyfield_parameters']['output_path'])
+    
+    a = SA_REAX_FF(arguments['Pyfield_parameters']['forecfield_file_path'] , arguments['Pyfield_parameters']['output_path'], arguments['Pyfield_parameters']['parameter_file_path'],
+                   arguments['Pyfield_parameters']['Training_file_path'], arguments['Pyfield_parameters']['structure_file_path'],
+                   T = arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['Initial_temperature'],
+                   T_min =  arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['Final_temperature'],
+                   Temperature_decreasing_factor = arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['Temperature_decreasing_factor'],
+                   max_iter = arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['Maximum_number_of_iterations'],
+                   number_of_points = arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['number_of_annealers'],
+                   min_style = arguments['LAMMPS_parameters']['minimization'], processors = arguments['Pyfield_parameters']['Number_of_processors'])
+    a.anneal(record_costs = arguments['Pyfield_parameters']['log_everything'].upper(), repelling_weight = 0, parallel = arguments['Pyfield_parameters']['Parallel'].upper())
+    if arguments['Pyfield_parameters']['log_everything'].upper() == 'NO':
+        a.clean_the_mess(lammpstrj = arguments['Pyfield_parameters']['save_lammps_trajectory'].upper())
+## For genetic algorithm
+if arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['Genetic_Algorithm'].upper() == 'YES': 
+    pass
