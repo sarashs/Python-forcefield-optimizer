@@ -11,6 +11,7 @@ from os import getcwd, path
 from SA import SA_REAX_FF 
 from GA import GA_REAX_FF
 from LAMMPS_Utils import geofilecreator
+from datetime import datetime
 import pylab
 
 def isfloat(value):
@@ -27,7 +28,7 @@ arguments ={'Pyfield_parameters': {'structure_file_path' : '', 'forecfield_file_
                 'Optimizatoin_parameters' : {'simulated_annealing_parameters' : {'simulated_annealing' : 'YES', 'number_of_annealers' : 1, 'coulomb_repelling_force_between_annealers' : 'OFF',\
                                             'Initial_temperature' : 10, 'Final_temperature' : 0.0001, 'Temperature_decreasing_factor' : 0.1, 'Maximum_number_of_iterations' : 3},\
                                             'genetic_algorithm parametes' : {'Genetic_Algorithm' : 'NO', 'keep_the_best' : 'YES', 'mode' : 'average', 'number_of_generations' : 5,\
-                                            'initial_temp_list' : [1, 0.5, 0.1, 0.05, 0.05]}}, 'LAMMPS_parameters' : {'minimization' : 'cg', 'box_dimentions': [100, 100, 100]}}
+                                            'initial_temp_list' : [], 'number_of_parameters' : 0}}, 'LAMMPS_parameters' : {'minimization' : 'cg', 'box_dimentions': [100, 100, 100]}}
 
 try:
     input_file = open(input_file_path)
@@ -82,6 +83,7 @@ for item in lines:
 print("Your input parameters: \n\n")
 print(arguments)
 print("\n\n")
+startTime = datetime.now()
 # for annealing
 if arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['simulated_annealing'].upper() == 'YES':  
     geofilecreator(arguments['Pyfield_parameters']['structure_file_path'], arguments['Pyfield_parameters']['output_path'])
@@ -94,9 +96,28 @@ if arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['simul
                    max_iter = arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['Maximum_number_of_iterations'],
                    number_of_points = arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['number_of_annealers'],
                    min_style = arguments['LAMMPS_parameters']['minimization'], processors = arguments['Pyfield_parameters']['Number_of_processors'])
-    a.anneal(record_costs = arguments['Pyfield_parameters']['log_everything'].upper(), repelling_weight = 0, parallel = arguments['Pyfield_parameters']['Parallel'].upper())
-    if arguments['Pyfield_parameters']['log_everything'].upper() == 'NO':
-        a.clean_the_mess(lammpstrj = arguments['Pyfield_parameters']['save_lammps_trajectory'].upper())
+    a.anneal(record_costs = arguments['Pyfield_parameters']['log_everything'].upper(), repelling_weight = arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['repelling_weight'], parallel = arguments['Pyfield_parameters']['Parallel'].upper())
 ## For genetic algorithm
 if arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['Genetic_Algorithm'].upper() == 'YES': 
-    pass
+    g = GA_REAX_FF.from_forcefield_list(a.sol_, a.cost_, arguments['Pyfield_parameters']['output_path'])
+    if len(arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['initial_temp_list']) == arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['number_of_generations']:
+        
+        print("The GA initial temperatures are being read from the input list.\n")
+        
+        for i in arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['initial_temp_list']:
+            g.next_generation(arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['number_of_parameters'], Keep_the_best = arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['keep_the_best'], mode = arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['mode'])
+            a.T = i
+            a.anneal(record_costs = arguments['Pyfield_parameters']['log_everything'].upper(), repelling_weight = arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['repelling_weight'], parallel = arguments['Pyfield_parameters']['Parallel'].upper())
+    else:
+        
+        print("The GA initial temperatures are set by the software.\n")
+        
+        for i in range(arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['number_of_generations']):
+            g.next_generation(arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['number_of_parameters'], Keep_the_best = arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['keep_the_best'], mode = arguments['Optimizatoin_parameters']['genetic_algorithm parametes']['mode'])
+            a.T = arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['Initial_temperature']
+            a.anneal(record_costs = arguments['Pyfield_parameters']['log_everything'].upper(), repelling_weight = arguments['Optimizatoin_parameters']['simulated_annealing_parameters']['repelling_weight'], parallel = arguments['Pyfield_parameters']['Parallel'].upper())
+#cleaning the mess
+if arguments['Pyfield_parameters']['log_everything'].upper() == 'NO':
+    a.clean_the_mess(lammpstrj = arguments['Pyfield_parameters']['save_lammps_trajectory'].upper())
+print('Your simulation took: ')
+print(datetime.now() - startTime)
