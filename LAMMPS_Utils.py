@@ -292,7 +292,7 @@ def gaussian_xyz_extractor(input_files_path, input_gaussian_file_name):
             index = -1
     S.write(str(len(to_be_written)) + '\n\n')
     for item in to_be_written:
-        S.write(atomic_number_dict[item[1]].ljust(4, ' ') + item[3].ljust(4, ' ') + item[4].ljust(4, ' ') + item[5].ljust(4, ' ') + '\n')
+        S.write(atomic_number_dict[item[1]].ljust(4, ' ') + item[3] + '  ' + item[4] + '  ' + item[5] + '\n')
     S.close()
 def energy_charge(x):
     """ This function outputs the charge and energy for a lammps simulations
