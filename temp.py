@@ -68,20 +68,20 @@ import pylab
 #listaa = [item['annealer_0.reax'] for item in a.costs]
 #pylab.plot(listaa)
 
-#create the xyz files
+##create the xyz files
 #import os
-#path = "/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/OH3_Si_O_Zr_OH3_B3LYP_disperssion/"
+#path = "/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/2SiOH4_H_bond_B3LYP_disperssion/"
 #for file_name in os.listdir(path):
 #    if file_name.endswith(".log"):
 #        gaussian_xyz_extractor(path, file_name)
 #
 #
-##create the input_structure_file
+###create the input_structure_file
 #for file_name in os.listdir(path):
 #    if file_name.endswith(".xyz"):
-#        append_2structure_file(path, "/home/sarashs/Python-forcefield-optimizer/tests/", file_name, "OH3_Si_O_Zr_OH3_structure", box_dim = [100, 100, 100],  restrain = ["bond 1 5 2000 2000 x\n"])
+#        append_2structure_file(path, "/home/sarashs/Python-forcefield-optimizer/tests/", file_name, "2SiOH4_H_bond_structure", box_dim = [100, 100, 100],  restrain = ["bond 1 5 2000 2000 x\n"])
 #  
-##extract the energies     
+###extract the energies     
 #for file_name in os.listdir(path):
 #    if file_name.endswith(".log"):
-#        gaussian_energy_extractor(path, "/home/sarashs/Python-forcefield-optimizer/tests/", file_name, "OH3_Si_O_Zr_OH3_energies")
+#        gaussian_energy_extractor(path, "/home/sarashs/Python-forcefield-optimizer/tests/", file_name, "2SiOH4_H_bond_energies")
