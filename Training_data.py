@@ -31,8 +31,11 @@ class Training_data(object):
                     charge_flag=True
                     self.training_charge_weight=float(re.findall(r'[-+]?\d*\.\d+|\d+',line_item)[0])
                     continue
+                #Ignore lines that start with #
+                if '#' in line_item[0]:
+                    pass
                 #reading the energy training specs
-                if (Energy_flag and not(charge_flag)):
+                elif (Energy_flag and not(charge_flag)):
                     if re.findall(r'[-+]?\d*\.\d+|\d+',line_item):
                         begining_of_first_string=re.search('\*',line_item).span()[0]+1
                         end_of_first_string=re.search('\s',line_item[begining_of_first_string:]).span()[0]+begining_of_first_string

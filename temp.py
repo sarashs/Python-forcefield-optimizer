@@ -68,7 +68,7 @@ import pylab
 #listaa = [item['annealer_0.reax'] for item in a.costs]
 #pylab.plot(listaa)
 
-##create the xyz files
+#create the xyz files
 #import os
 #path = "/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/2SiOH4_H_bond_B3LYP_disperssion/"
 #for file_name in os.listdir(path):

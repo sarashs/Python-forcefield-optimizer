@@ -16,45 +16,46 @@ ENERGY 1
 30.0   1*OH4Zr_O_Si_dispersion_177    -1*OH4Zr_O_Si_dispersion_164_eq 0.0689
 0.0  1*SiO2_cluster_Zr -1*SiO2_cluster 1
 0.0  1*ZrZr -1*SiSi 1
+
 #hbonds
-1.0 1*2SiOH4_3_3     -1*2SiOH4_3_95_eq  12.399
-1.0 1*2SiOH4_3_6     -1*2SiOH4_3_95_eq  3.4613
-1.0 1*2SiOH4_3_8     -1*2SiOH4_3_95_eq  0.7276
-1.0 1*2SiOH4_3_9     -1*2SiOH4_3_95_eq  0.0795
-1.0 1*2SiOH4_3_95    -1*2SiOH4_3_95_eq  0
-1.0 1*2SiOH4_4       -1*2SiOH4_3_95_eq  0.0784
-1.0 1*2SiOH4_4_1     -1*2SiOH4_3_95_eq  0.6424
-1.0 1*2SiOH4_4_2     -1*2SiOH4_3_95_eq  1.6184
-1.0 1*2SiOH4_4_4     -1*2SiOH4_3_95_eq  2.6083
-1.0 1*2SiOH4_4_5     -1*2SiOH4_3_95_eq  2.6784
-1.0 1*2SiOH4_4_8     -1*2SiOH4_3_95_eq  4.4924
-1.0 1*2SiOH4_5_1     -1*2SiOH4_3_95_eq  7.6686
-1.0 1*2SiOH4_5_4     -1*2SiOH4_3_95_eq  8.4224
-1.0 1*2SiOH4_6       -1*2SiOH4_3_95_eq  11.206
+30.0 1*2SiOH4_3_3  -1*2SiOH4_3_95_eq  12.399
+35.0 1*2SiOH4_3_6  -1*2SiOH4_3_95_eq  3.4613
+40.0 1*2SiOH4_3_8  -1*2SiOH4_3_95_eq  0.7276
+45.0 1*2SiOH4_3_9  -1*2SiOH4_3_95_eq  0.0795
+50.0 1*2SiOH4_3_95 -1*2SiOH4_3_95_eq  0
+45.0 1*2SiOH4_4    -1*2SiOH4_3_95_eq  0.0784
+40.0 1*2SiOH4_4_1  -1*2SiOH4_3_95_eq  0.6424
+35.0 1*2SiOH4_4_2  -1*2SiOH4_3_95_eq  1.6184
+30.0 1*2SiOH4_4_5  -1*2SiOH4_3_95_eq  2.6784
+25.0 1*2SiOH4_4_8  -1*2SiOH4_3_95_eq  4.4924
+20.0 1*2SiOH4_5_1  -1*2SiOH4_3_95_eq  7.6686
+15.0 1*2SiOH4_5_4  -1*2SiOH4_3_95_eq  8.4224
+10.0 1*2SiOH4_6    -1*2SiOH4_3_95_eq  11.206
+
 #center
-1.0 1*4SiOH3_O_Zr_center_132 -1*4SiOH3_O_Zr_center_eq
-1.0 1*4SiOH3_O_Zr_center_137
-1.0 1*4SiOH3_O_Zr_center_142
-1.0 1*4SiOH3_O_Zr_center_146
-1.0 1*4SiOH3_O_Zr_center_150
-1.0 1*4SiOH3_O_Zr_center_152
-1.0 1*4SiOH3_O_Zr_center_154
-1.0 1*4SiOH3_O_Zr_center_155
-1.0 1*4SiOH3_O_Zr_center_157
-1.0 1*4SiOH3_O_Zr_center_158
-1.0 1*4SiOH3_O_Zr_center_160
-1.0 1*4SiOH3_O_Zr_center_164
-1.0 1*4SiOH3_O_Zr_center_168
-1.0 1*4SiOH3_O_Zr_center_173
-1.0 1*4SiOH3_O_Zr_center_178
+65.0 1*4SiOH3_O_Zr_center_148   -1*4SiOH3_O_Zr_center_164_3_eq  0.2139
+70.0 1*4SiOH3_O_Zr_center_152   -1*4SiOH3_O_Zr_center_164_3_eq  0.1065
+80.0 1*4SiOH3_O_Zr_center_155   -1*4SiOH3_O_Zr_center_164_3_eq  0.0531
+85.0 1*4SiOH3_O_Zr_center_158   -1*4SiOH3_O_Zr_center_164_3_eq  0.0200
+90.0 1*4SiOH3_O_Zr_center_160   -1*4SiOH3_O_Zr_center_164_3_eq  0.0073
+95.0 1*4SiOH3_O_Zr_center_162   -1*4SiOH3_O_Zr_center_164_3_eq  0.0010
+100.0 1*4SiOH3_O_Zr_center_164_3 -1*4SiOH3_O_Zr_center_164_3_eq  0
+95.0 1*4SiOH3_O_Zr_center_165   -1*4SiOH3_O_Zr_center_164_3_eq  0.0008
+90.0 1*4SiOH3_O_Zr_center_166   -1*4SiOH3_O_Zr_center_164_3_eq  0.0030
+85.0 1*4SiOH3_O_Zr_center_168   -1*4SiOH3_O_Zr_center_164_3_eq  0.0093
+80.0 1*4SiOH3_O_Zr_center_170   -1*4SiOH3_O_Zr_center_164_3_eq  0.0196
+75.0 1*4SiOH3_O_Zr_center_172   -1*4SiOH3_O_Zr_center_164_3_eq  0.0318
+70.0 1*4SiOH3_O_Zr_center_175   -1*4SiOH3_O_Zr_center_164_3_eq  0.0577
+65.0 1*4SiOH3_O_Zr_center_178   -1*4SiOH3_O_Zr_center_164_3_eq  0.0932
+
 #corner
-1.0 1*4SiOH3_O_Zr_corner_106   -1*4SiOH3_O_Zr_corner_111_7_eq  0.5392
-1.0 1*4SiOH3_O_Zr_corner_108   -1*4SiOH3_O_Zr_corner_111_7_eq  0.2051
-1.0 1*4SiOH3_O_Zr_corner_109   -1*4SiOH3_O_Zr_corner_111_7_eq  0.1044
-1.0 1*4SiOH3_O_Zr_corner_110   -1*4SiOH3_O_Zr_corner_111_7_eq  0.0395
-1.0 1*4SiOH3_O_Zr_corner_111_7 -1*4SiOH3_O_Zr_corner_111_7_eq  0
-1.0 1*4SiOH3_O_Zr_corner_113   -1*4SiOH3_O_Zr_corner_111_7_eq  0.0171
-1.0 1*4SiOH3_O_Zr_corner_115   -1*4SiOH3_O_Zr_corner_111_7_eq  0.0990
-1.0 1*4SiOH3_O_Zr_corner_118   -1*4SiOH3_O_Zr_corner_111_7_eq  0.2997
-1.0 1*4SiOH3_O_Zr_corner_123   -1*4SiOH3_O_Zr_corner_111_7_eq  0.7130
-1.0 1*4SiOH3_O_Zr_corner_128   -1*4SiOH3_O_Zr_corner_111_7_eq  1.1631
+30.0 1*4SiOH3_O_Zr_corner_106   -1*4SiOH3_O_Zr_corner_111_7_eq  0.5392
+35.0 1*4SiOH3_O_Zr_corner_108   -1*4SiOH3_O_Zr_corner_111_7_eq  0.2051
+40.0 1*4SiOH3_O_Zr_corner_109   -1*4SiOH3_O_Zr_corner_111_7_eq  0.1044
+45.0 1*4SiOH3_O_Zr_corner_110   -1*4SiOH3_O_Zr_corner_111_7_eq  0.0395
+50.0 1*4SiOH3_O_Zr_corner_111_7 -1*4SiOH3_O_Zr_corner_111_7_eq  0
+45.0 1*4SiOH3_O_Zr_corner_113   -1*4SiOH3_O_Zr_corner_111_7_eq  0.0171
+40.0 1*4SiOH3_O_Zr_corner_115   -1*4SiOH3_O_Zr_corner_111_7_eq  0.0990
+35.0 1*4SiOH3_O_Zr_corner_118   -1*4SiOH3_O_Zr_corner_111_7_eq  0.2997
+30.0 1*4SiOH3_O_Zr_corner_123   -1*4SiOH3_O_Zr_corner_111_7_eq  0.7130
+25.0 1*4SiOH3_O_Zr_corner_128   -1*4SiOH3_O_Zr_corner_111_7_eq  1.1631
