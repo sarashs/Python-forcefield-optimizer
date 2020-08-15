@@ -17,34 +17,29 @@ import pylab
 #from mpi4py import MPI
 
 """Training data is now + path"""
-
-#ff_filePath = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/ffield2.reax'
-#ParamSelect_filePath = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/params'
-#Training_file = 'Trainingfile.txt'
-#Input_structure_file = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/Zr_O_Si_structure.txt'
-#output_path = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/'
-#geofilecreator(Input_structure_file, output_path)
-#a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=0.3, T_min=0.01, Temperature_decreasing_factor=0.1, max_iter=30, number_of_points=5, min_style = 'cg')
-
 #For ZrOSi, Genetic algorithm
-#ff_filePath = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/ffield1.reax'
-#ParamSelect_filePath = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/params'
-#Training_file = 'Trainingfile.txt'
-#Input_structure_file = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/Zr_O_Si_structure.txt'
-#output_path = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/'
-#geofilecreator(Input_structure_file, output_path)
-#a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=1, T_min=0.01, Temperature_decreasing_factor=0.1, max_iter=1, number_of_points=1, min_style = 'cg')
-#a.anneal(record_costs = "YES", repelling_weight = 0)
-##temp_list = [0.5]*5 + [0.2]*5 + [0.1]*10 + [0.05]*5
-##for initial_temp in temp_list: #range(30): 
-##    a.T = initial_temp
-##    g = GA_REAX_FF.from_forcefield_list(a.sol_, a.cost_, output_path)
-##    g.next_generation(5, Keep_the_best = "YES", mode = "average")
-##    a.anneal(record_costs = "YES", repelling_weight = 0)
-#listaa = [item['annealer_0.reax'] for item in a.costs]
-#pylab.plot(listaa)
-#a.Individual_Energy(parallel = "NO")
-#a.clean_the_mess(lammpstrj = "NO")
+ff_filePath = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/ffield1.reax'
+ParamSelect_filePath = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/params'
+Training_file = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/Trainingfile.txt'
+Input_structure_file = '/home/sarashs/Python-forcefield-optimizer/tests/2SiOH4_H_bond_structure.txt'
+output_path = '/home/sarashs/Python-forcefield-optimizer/tests/Zr_Si_forcefield/'
+geofilecreator(Input_structure_file, output_path)
+
+a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=1, T_min=0.1, Temperature_decreasing_factor=0.1, max_iter=3, number_of_points=1, min_style = 'cg', processors = 12)
+startTime = datetime.now()
+a.anneal(record_costs = "YES", repelling_weight = 0, parallel = 'YES')
+#for i in range(5):
+#    a.anneal(record_costs = "YES", repelling_weight = 0, parallel = 'NO')
+###g = GA_REAX_FF.from_forcefield_list(a.sol_, a.cost_, output_path)
+###g.next_generation(5, Keep_the_best = "YES", mode = "average")
+#    a.T = 0.2
+##a.anneal(record_costs = "YES", repelling_weight = 0, parallel = 'NO')
+#a.clean_the_mess(lammpstrj = "YES")
+print(datetime.now() - startTime)
+listaa = [item['annealer_0.reax'] for item in a.costs]
+pylab.plot(listaa)
+a.Individual_Energy(parallel = "NO")
+a.clean_the_mess(lammpstrj = "NO")
 #pylab.plot([item-min(list(a.structure_energies['annealer_0.reax'].values())) for item in a.structure_energies['annealer_0.reax'].values()])
 
 ##For CL
@@ -55,18 +50,22 @@ import pylab
 #output_path = '/home/sarashs/Python-forcefield-optimizer/tests/'
 #geofilecreator(Input_structure_file, output_path)
 #
-#a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=0.2, T_min=0.1, Temperature_decreasing_factor=0.1, max_iter=3, number_of_points=1, min_style = 'cg', processors = 6)
+#a = SA_REAX_FF(ff_filePath, output_path, ParamSelect_filePath, Training_file, Input_structure_file, T=1, T_min=0.1, Temperature_decreasing_factor=0.1, max_iter=3, number_of_points=1, min_style = 'cg', processors = 6)
 #startTime = datetime.now()
-#for i in range(5):
-#    a.anneal(record_costs = "YES", repelling_weight = 0, parallel = 'NO')
-###g = GA_REAX_FF.from_forcefield_list(a.sol_, a.cost_, output_path)
-###g.next_generation(5, Keep_the_best = "YES", mode = "average")
-#    a.T = 0.2
+#a.anneal(record_costs = "YES", repelling_weight = 0, parallel = 'YES')
+##for i in range(5):
+##    a.anneal(record_costs = "YES", repelling_weight = 0, parallel = 'NO')
+####g = GA_REAX_FF.from_forcefield_list(a.sol_, a.cost_, output_path)
+####g.next_generation(5, Keep_the_best = "YES", mode = "average")
+##    a.T = 0.2
 ###a.anneal(record_costs = "YES", repelling_weight = 0, parallel = 'NO')
 #a.clean_the_mess(lammpstrj = "YES")
 #print(datetime.now() - startTime)
 #listaa = [item['annealer_0.reax'] for item in a.costs]
 #pylab.plot(listaa)
+#a.Individual_Energy(parallel = "NO")
+#a.clean_the_mess(lammpstrj = "NO")
+#pylab.plot([item-min(list(a.structure_energies['annealer_0.reax'].values())) for item in a.structure_energies['annealer_0.reax'].values()])
 
 #create the xyz files
 #import os
