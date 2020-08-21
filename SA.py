@@ -68,6 +68,13 @@ class SA(object):
 
         """
         pass
+    def init_search(self, number_of_points):
+        """Randomly searches the input space for an initial input
+        Returns
+        --------
+        dict{param_tuple : initial parameters}
+        """
+        pass
     def cost_function(self, repelling_weight = 0):
         """Computes the cost function.
         Returns
@@ -163,6 +170,8 @@ class SA(object):
         os.system(command) 
         command = "rm " + self.general_path + "*.dat"
         os.system(command)
+        command = "rm " + self.general_path + "*.log"
+        os.system(command)
         if "YES" in lammpstrj:
             command = "rm " + self.general_path + "*.lammpstrj"
             os.system(command)  
@@ -241,7 +250,37 @@ class SA_REAX_FF(SA):
             raise ValueError("update value for inpute_generator takes YES or NO only!")
         # use the same name for the input structure file
         self.lammps_file_list[forcefield_name] = lammps_input_creator(self.Input_structure_file, forcefield_name, self.min_style, 'reax', self.general_path)
-
+    def init_search(self, forcefield_name, number_of_points, parallel = 'NO'):
+        """Randomly searches the input space for an initial input
+        Returns
+        --------
+        dict{param_tuple : initial parameters}
+        """
+        Initial_energy = 1e50
+        bestFF = None
+        # Parallezization setup
+        if 'YES' in parallel:
+            p = Pool(processes=self.number_of_processors)
+        else:
+            p = None
+        ###
+        for i in range(number_of_points):
+            for param_tuple in self.sol_[forcefield_name].param_min_max_delta.keys():
+                self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] = round(self.sol_[forcefield_name].params[param_tuple[0]][param_tuple[1]][param_tuple[2]] + random.uniform(self.sol_[forcefield_name].param_min_max_delta[param_tuple]['min'], self.sol_[forcefield_name].param_min_max_delta[param_tuple]['max']), 4)
+            # save the new forcefield file
+            self.sol_[forcefield_name].write_forcefield(self.general_path + forcefield_name)
+            self.Individual_Energy(parallel, p)
+            self.cost_function()
+            if self.cost_[forcefield_name] < Initial_energy:
+                Initial_energy = self.cost_[forcefield_name]
+                bestFF = deepcopy(self.sol_[forcefield_name])
+        print('best energy' + str(Initial_energy))
+        bestFF.write_forcefield(self.general_path + forcefield_name)
+        # Parallezization setup
+        if 'YES' in parallel:
+            p.close()
+            p.join()
+        ###
     def anneal(self, record_costs = "NO", repelling_weight = 0, parallel = 'NO'):
         #Automatic temperature rate control initialize
         tmp_ctrl_step = 0
