@@ -1,0 +1,36 @@
+log {{ LOG_FILE }}
+# 1.- Initialization #######################
+units real
+dimension 3
+processors * * *
+boundary p p p
+atom_style charge
+
+# 2.- Atom definition ######################
+atom_modify map hash
+read_data {{ DATA_FILE }}
+
+# 3.- Force-Field ##########################
+pair_style reaxff NULL
+pair_coeff * * {{ FFIELD_PATH }}{% for el in ELEMENTS %} {{ el }}{% endfor %}
+fix 99 all qeq/reaxff 1 0.0 10.0 1.0e-6 reaxff
+neighbor        2.0 bin
+neigh_modify    every 10 check yes
+
+# 4.- MD & relax parameters ################
+# `dump … custom 1000000` opens the dump file and triggers a force
+# evaluation at step 0; this converges QEq before minimize starts and
+# *does* affect the per-iteration result. Don't remove it.
+dump DUMP2 all custom 1000000 {{ DUMP_FILE }} id type x y z q
+thermo_style custom step etotal ke pe temp press pxx pyy pzz
+thermo 1000000
+{% if RESTRAINTS %}fix holdem all restrain{% for r in RESTRAINTS %} {{ r }}{% endfor %}
+fix_modify holdem energy yes
+{% endif %}min_style {{ MIN_STYLE }}
+minimize 1.0e-8 0.0 200000 2000000
+undump DUMP2
+# Overwrite the dump file with the post-minimization structure so
+# structural_match etc. read the optimised geometry, not step 0.
+write_dump all custom {{ DUMP_FILE }} id type x y z q modify sort id
+{% if RESTRAINTS %}unfix holdem
+{% endif %}
