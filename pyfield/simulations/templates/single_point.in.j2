@@ -1,0 +1,23 @@
+log {{ LOG_FILE }}
+units real
+dimension 3
+processors * * *
+boundary p p p
+atom_style charge
+
+atom_modify map hash
+read_data {{ DATA_FILE }}
+
+pair_style reaxff NULL
+pair_coeff * * {{ FFIELD_PATH }}{% for el in ELEMENTS %} {{ el }}{% endfor %}
+fix qeq all qeq/reaxff 1 0.0 10.0 1.0e-6 reaxff
+neighbor        2.0 bin
+neigh_modify    every 10 check yes
+
+# Single energy + force evaluation. The dump captures forces (`fx fy fz`)
+# so the `forces` objective can read them.
+dump force_dump all custom 1 {{ DUMP_FILE }} id type x y z q fx fy fz
+thermo_style custom step etotal ke pe temp press
+thermo 1
+run 0
+undump force_dump

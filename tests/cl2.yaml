@@ -1,0 +1,191 @@
+# tests/cl2.yaml — sample PyField YAML config (Phase 1 schema).
+#
+# Equivalent to the legacy `Trainingfile_2.txt` + `Inputstructurefile.txt` +
+# `params` triplet that drives `smoke_run.py`. Walks 20 Cl-Cl bond lengths
+# against ΔE-from-equilibrium QM targets.
+#
+# Run with:  pyfield run tests/cl2.yaml
+# (Phase 1 wires this; today the smoke still goes through smoke_run.py.)
+
+forcefield:
+  path: tests/ffieldoriginal.txt
+  type: reaxff
+  params: tests/params      # untouched ReaxFF/LAMMPS-style indices file
+
+# ---------------------------------------------------------------------------
+# Structures: each describes a simulation cell and the atoms in it.
+# Inline `atoms:` keeps the demo self-contained; production configs would
+# usually point at xyz files via `path:`.
+# ---------------------------------------------------------------------------
+structures:
+  Cl2_Opt:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.02802, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.02802, charge: 0 }
+  Cl2_144:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -0.72, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  0.72, charge: 0 }
+  Cl2_154:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -0.77003, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  0.77003, charge: 0 }
+  Cl2_164:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -0.82, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  0.82, charge: 0 }
+  Cl2_174:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -0.87, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  0.87, charge: 0 }
+  Cl2_184:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -0.92009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  0.92009, charge: 0 }
+  Cl2_194:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -0.97009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  0.97009, charge: 0 }
+  Cl2_204:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.02009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.02009, charge: 0 }
+  Cl2_214:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.07009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.07009, charge: 0 }
+  Cl2_224:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.12009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.12009, charge: 0 }
+  Cl2_234:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.17009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.17009, charge: 0 }
+  Cl2_244:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.22009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.22009, charge: 0 }
+  Cl2_254:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.27009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.27009, charge: 0 }
+  Cl2_264:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.32009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.32009, charge: 0 }
+  Cl2_274:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.37009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.37009, charge: 0 }
+  Cl2_284:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.42009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.42009, charge: 0 }
+  Cl2_294:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.47009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.47009, charge: 0 }
+  Cl2_304:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.52009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.52009, charge: 0 }
+  Cl2_314:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.57009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.57009, charge: 0 }
+  Cl2_414:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -2.07009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  2.07009, charge: 0 }
+
+# ---------------------------------------------------------------------------
+# Simulations: one constrained `minimize` per structure. The `restraints:`
+# list ports the pre-Phase-1 `#restrain` block (LAMMPS `fix restrain`
+# arguments) so the bond stays at the QM-equilibrium length we want to
+# evaluate the energy at.
+# ---------------------------------------------------------------------------
+simulations:
+  Cl2_Opt_min: { structure: Cl2_Opt, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.056"] }
+  Cl2_144_min: { structure: Cl2_144, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 1.44"] }
+  Cl2_154_min: { structure: Cl2_154, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 1.54"] }
+  Cl2_164_min: { structure: Cl2_164, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 1.64"] }
+  Cl2_174_min: { structure: Cl2_174, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 1.74"] }
+  Cl2_184_min: { structure: Cl2_184, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 1.84"] }
+  Cl2_194_min: { structure: Cl2_194, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 1.94"] }
+  Cl2_204_min: { structure: Cl2_204, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.04"] }
+  Cl2_214_min: { structure: Cl2_214, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.14"] }
+  Cl2_224_min: { structure: Cl2_224, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.24"] }
+  Cl2_234_min: { structure: Cl2_234, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.34"] }
+  Cl2_244_min: { structure: Cl2_244, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.44"] }
+  Cl2_254_min: { structure: Cl2_254, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.54"] }
+  Cl2_264_min: { structure: Cl2_264, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.64"] }
+  Cl2_274_min: { structure: Cl2_274, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.74"] }
+  Cl2_284_min: { structure: Cl2_284, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.84"] }
+  Cl2_294_min: { structure: Cl2_294, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 2.94"] }
+  Cl2_304_min: { structure: Cl2_304, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 3.04"] }
+  Cl2_314_min: { structure: Cl2_314, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 3.14"] }
+  Cl2_414_min: { structure: Cl2_414, type: minimize, min_style: cg, restraints: ["bond 1 2 2000 2000 4.14"] }
+
+# ---------------------------------------------------------------------------
+# Targets: each one is one residual added into the cost function. Here we
+# use only `energy_combination` (the legacy ENERGY block, generalized) to
+# match Cl-Cl ΔE from the equilibrium structure.  Numbers from
+# tests/Trainingfile_2.txt.
+# ---------------------------------------------------------------------------
+targets:
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_414_min: +1, Cl2_Opt_min: -1 }, target: 81.394 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_314_min: +1, Cl2_Opt_min: -1 }, target: 56.0108 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_304_min: +1, Cl2_Opt_min: -1 }, target: 51.4507 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_294_min: +1, Cl2_Opt_min: -1 }, target: 46.72 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_284_min: +1, Cl2_Opt_min: -1 }, target: 41.4219 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_274_min: +1, Cl2_Opt_min: -1 }, target: 35.6477 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_264_min: +1, Cl2_Opt_min: -1 }, target: 29.485 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_254_min: +1, Cl2_Opt_min: -1 }, target: 23.1189 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_244_min: +1, Cl2_Opt_min: -1 }, target: 16.7303 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_234_min: +1, Cl2_Opt_min: -1 }, target: 10.5926 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_224_min: +1, Cl2_Opt_min: -1 }, target: 5.19672 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_214_min: +1, Cl2_Opt_min: -1 }, target: 1.24281 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_204_min: +1, Cl2_Opt_min: -1 }, target: 0.0329787 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_194_min: +1, Cl2_Opt_min: -1 }, target: 3.07073 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_184_min: +1, Cl2_Opt_min: -1 }, target: 12.7814 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_174_min: +1, Cl2_Opt_min: -1 }, target: 32.3658 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_164_min: +1, Cl2_Opt_min: -1 }, target: 67.486 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_154_min: +1, Cl2_Opt_min: -1 }, target: 126.756 }
+  - { kind: energy_combination, weight: 1.0, terms: { Cl2_144_min: +1, Cl2_Opt_min: -1 }, target: 223.642 }
+
+optimizer:
+  method: sa
+  T: 0.2
+  T_min: 0.1
+  alpha: 0.5             # called Temperature_decreasing_factor in the legacy SA
+  max_iter: 2
+  number_of_points: 1
+  parallel: false
+  seed: 0
+  min_style: cg
+  record_costs: true
+
+output:
+  dir: tests/runs/cl2_smoke
+  record_costs: true

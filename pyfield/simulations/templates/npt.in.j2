@@ -1,0 +1,28 @@
+log {{ LOG_FILE }}
+units real
+dimension 3
+processors * * *
+boundary p p p
+atom_style charge
+
+atom_modify map hash
+read_data {{ DATA_FILE }}
+
+pair_style reaxff NULL
+pair_coeff * * {{ FFIELD_PATH }}{% for el in ELEMENTS %} {{ el }}{% endfor %}
+fix qeq all qeq/reaxff 1 0.0 10.0 1.0e-6 reaxff
+neighbor        2.0 bin
+neigh_modify    every 10 check yes
+
+# NPT dynamics — `iso` couples all three box vectors so the simulation
+# can compress / dilate isotropically. PRESSURE is in atmospheres
+# (units = real → pressure = atm).
+timestep {{ TIMESTEP_FS }}
+velocity all create {{ TEMPERATURE }} {{ SEED }} dist gaussian
+dump traj all custom {{ SAMPLE_EVERY }} {{ DUMP_FILE }} id type x y z q
+thermo_style custom step etotal ke pe temp press vol
+thermo {{ SAMPLE_EVERY }}
+fix npt_run all npt temp {{ TEMPERATURE }} {{ TEMPERATURE }} {{ TDAMP }} iso {{ PRESSURE }} {{ PRESSURE }} {{ PDAMP }}
+run {{ STEPS }}
+unfix npt_run
+undump traj

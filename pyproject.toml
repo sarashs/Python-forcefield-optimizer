@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyfield"
+version = "0.1.0"
+description = "Force-field optimization driven by quantum-chemistry reference data."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "GPL-2.0-or-later" }
+authors = [{ name = "PyField contributors" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy",
+    "pyyaml",
+    "pydantic>=2",
+    "jinja2",
+]
+
+[project.optional-dependencies]
+mpi = ["lammps[mpi]"]
+nn  = ["tensorflow"]
+dev = ["pytest"]
+
+[project.scripts]
+pyfield = "pyfield.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["pyfield*"]
+
+[tool.setuptools.package-data]
+pyfield = ["simulations/templates/*.j2"]

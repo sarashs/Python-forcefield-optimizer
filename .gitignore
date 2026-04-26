@@ -3,3 +3,27 @@
 *.class
 *.o
 *.tmp
+
+# Internal developer notes — kept locally, not pushed to the public repo.
+DEV.md
+
+# Notebook outputs
+.ipynb_checkpoints/
+examples/_*.png
+
+# build / install artefacts
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+__pycache__/
+
+# run outputs
+tests/runs/
+tests/Cl2_*.log
+tests/Cl2_*.dat
+tests/Cl2_*.data
+tests/Cl2_*.lammpstrj
+tests/*annealer*.reax
+tests/*bestFF.reax
+log.lammps

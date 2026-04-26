@@ -1,0 +1,29 @@
+log {{ LOG_FILE }}
+# 1.- Initialization #######################
+units real
+dimension 3
+processors * * *
+boundary p p p
+atom_style charge
+
+# 2.- Atom definition ######################
+atom_modify map hash
+read_data {{ DATA_FILE }}
+
+# 3.- Force-Field ##########################
+pair_style reaxff NULL
+pair_coeff * * {{ FFIELD_PATH }}{% for el in ELEMENTS %} {{ el }}{% endfor %}
+fix qeq all qeq/reaxff 1 0.0 10.0 1.0e-6 reaxff
+neighbor        2.0 bin
+neigh_modify    every 10 check yes
+
+# 4.- NVT dynamics #########################
+timestep {{ TIMESTEP_FS }}
+velocity all create {{ TEMPERATURE }} {{ SEED }} dist gaussian
+dump traj all custom {{ SAMPLE_EVERY }} {{ DUMP_FILE }} id type x y z q
+thermo_style custom step etotal ke pe temp press
+thermo {{ SAMPLE_EVERY }}
+fix nvt_run all nvt temp {{ TEMPERATURE }} {{ TEMPERATURE }} {{ TDAMP }}
+run {{ STEPS }}
+unfix nvt_run
+undump traj
