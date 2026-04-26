@@ -4,9 +4,6 @@
 *.o
 *.tmp
 
-# Internal developer notes — kept locally, not pushed to the public repo.
-DEV.md
-
 # Notebook outputs
 .ipynb_checkpoints/
 examples/_*.png

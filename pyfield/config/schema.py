@@ -42,6 +42,10 @@ class StructureCfg(BaseModel):
     box: Tuple[float, float, float]
     atoms: Optional[List[AtomCfg]] = None
     path: Optional[Path] = None
+    # When True, `pyfield qm-prep` first relaxes this structure with the
+    # configured QM backend and writes the relaxed coordinates back into
+    # `atoms:` of the populated YAML (the flag itself is removed).
+    qm_relax: bool = False
 
     @model_validator(mode="after")
     def _exactly_one_source(self) -> "StructureCfg":
@@ -139,6 +143,30 @@ class OutputCfg(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# qm — optional, only required if any target/reference is `from: dft`
+# or any structure has `qm_relax: true`. Free / open-source codes only —
+# Gaussian/VASP/Molpro require a licence and are intentionally not bundled.
+# ---------------------------------------------------------------------------
+
+class QmCfg(BaseModel):
+    """Settings for `pyfield qm-prep`. Per-code knobs land in `extras`."""
+    model_config = ConfigDict(extra="allow")
+    code: Literal["pyscf", "xtb", "qe", "gpaw", "cp2k", "nwchem", "psi4", "orca"]
+    functional: str = "lda"
+    basis: str = "sto-3g"            # Gaussian-basis codes (pyscf, psi4, orca)
+    cache_dir: Path = Path("qm_cache/")
+
+
+# ---------------------------------------------------------------------------
+# placeholder predicate — `target: { from: dft }` style mappings
+# ---------------------------------------------------------------------------
+
+def is_qm_placeholder(value) -> bool:
+    """True if `value` is a `{from: dft}`-style placeholder slot."""
+    return isinstance(value, dict) and value.get("from") == "dft"
+
+
+# ---------------------------------------------------------------------------
 # top-level
 # ---------------------------------------------------------------------------
 
@@ -151,6 +179,27 @@ class PyFieldConfig(BaseModel):
     targets: List[TargetCfg]
     optimizer: OptimizerCfg = Field(default_factory=OptimizerCfg)
     output: OutputCfg = Field(default_factory=OutputCfg)
+    qm: Optional[QmCfg] = None
+
+    @model_validator(mode="after")
+    def _qm_required_when_placeholders_exist(self) -> "PyFieldConfig":
+        if self.qm is not None:
+            return self
+        for name, s in self.structures.items():
+            if s.qm_relax:
+                raise ValueError(
+                    f"structure {name!r} has `qm_relax: true` but no top-level "
+                    f"`qm:` block is configured"
+                )
+        for i, t in enumerate(self.targets):
+            extras = getattr(t, "__pydantic_extra__", {}) or {}
+            for slot in ("target", "reference"):
+                if is_qm_placeholder(extras.get(slot)):
+                    raise ValueError(
+                        f"target #{i} (kind={t.kind!r}) has {slot}: "
+                        f"{{from: dft}} but no top-level `qm:` block is configured"
+                    )
+        return self
 
     @model_validator(mode="after")
     def _cross_refs_resolve(self) -> "PyFieldConfig":

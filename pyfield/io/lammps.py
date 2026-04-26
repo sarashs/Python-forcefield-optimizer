@@ -41,13 +41,15 @@ class LammpsRunner:
     file gets a clean LAMMPS environment without paying the spawn cost.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, quiet: bool = True) -> None:
         self._lmp = None
+        self._quiet = quiet
 
     def _instance(self):
         if self._lmp is None:
             from lammps import lammps  # imported lazily — not every test path needs it
-            self._lmp = lammps()
+            cmdargs = ["-screen", "none", "-log", "none"] if self._quiet else []
+            self._lmp = lammps(cmdargs=cmdargs)
         return self._lmp
 
     def run_input_file(self, path: Path | str) -> Tuple[float, List[float]]:

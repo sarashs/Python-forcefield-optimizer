@@ -1,0 +1,76 @@
+# tests/cl2_qm.yaml — `pyfield qm-prep` demo config.
+#
+# Both DFT and ReaxFF evaluate **single-point** energies at the bond
+# lengths typed below — neither side relaxes the geometry. That is what
+# you want for a bond-energy scan: the points on the curve must be at
+# *the same geometries* on both sides, otherwise the ΔE comparison
+# is apples-to-oranges.
+#
+#   - DFT side:  `qm-prep` runs PySCF single-points (no `qm_relax: true`).
+#   - LAMMPS side: `type: single_point` runs LAMMPS with `run 0`
+#     (no `minimize`, so the input coordinates are not perturbed).
+
+forcefield:
+  path: tests/ffieldoriginal.txt
+  type: reaxff
+  params: tests/params
+
+qm:
+  code: pyscf
+  functional: b3lyp             # hybrid — pure functionals (LDA/PBE) overshoot
+                                # Cl-Cl dissociation by 4× due to self-interaction
+                                # error. B3LYP/def2-SVP matches the production
+                                # Gaussian numbers (~88 / 59 kcal/mol) for the
+                                # 414 / 314 stretches.
+  basis: def2-svp
+  cache_dir: tests/runs/qm_cache
+
+structures:
+  Cl2_Opt:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.02802, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.02802, charge: 0 }
+
+  Cl2_414:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -2.07009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  2.07009, charge: 0 }
+
+  Cl2_314:
+    box: [100, 100, 100]
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.57009, charge: 0 }
+      - { element: Cl, x: 0, y: 0, z:  1.57009, charge: 0 }
+
+simulations:
+  Cl2_Opt_sp: { structure: Cl2_Opt, type: single_point }
+  Cl2_414_sp: { structure: Cl2_414, type: single_point }
+  Cl2_314_sp: { structure: Cl2_314, type: single_point }
+
+targets:
+  - kind: energy_combination
+    weight: 1.0
+    terms: { Cl2_414_sp: +1, Cl2_Opt_sp: -1 }
+    target: { from: dft }       # qm-prep fills this in
+
+  - kind: energy_combination
+    weight: 1.0
+    terms: { Cl2_314_sp: +1, Cl2_Opt_sp: -1 }
+    target: { from: dft }       # qm-prep fills this in
+
+optimizer:
+  method: sa
+  T: 1.0
+  T_min: 0.1
+  alpha: 0.98
+  max_iter: 1000
+  number_of_points: 1
+  seed: 0
+  min_style: cg
+  record_costs: true
+
+output:
+  dir: tests/runs/cl2_qm_smoke
+  record_costs: true

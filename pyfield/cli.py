@@ -20,6 +20,18 @@ def main(argv=None) -> int:
     run_legacy.add_argument("--params", required=True, help="Path to params file")
     run_legacy.add_argument("--out", default=".", help="Output directory")
 
+    qm_prep = sub.add_parser(
+        "qm-prep",
+        help="Populate `from: dft` placeholders in a YAML config via QM",
+    )
+    qm_prep.add_argument("config", help="Path to a pyfield YAML config")
+    qm_prep.add_argument("-o", "--output", help="Path to write the populated YAML "
+                                                "(default: <config>.populated.yaml)")
+    qm_prep.add_argument("--in-place", action="store_true",
+                         help="Mutate `config` in place (writes a .bak first)")
+    qm_prep.add_argument("--force", action="store_true",
+                         help="Ignore the QM cache and re-run every job")
+
     args = parser.parse_args(argv)
 
     # Import lazily so `pyfield --help` doesn't pay for pydantic / lammps imports.
@@ -34,6 +46,14 @@ def main(argv=None) -> int:
             ff=args.ff,
             params=args.params,
             out=args.out,
+        )
+    if args.cmd == "qm-prep":
+        from pyfield.runner import run_qm_prep
+        return run_qm_prep(
+            args.config,
+            output=args.output,
+            in_place=args.in_place,
+            force=args.force,
         )
     return 2
 

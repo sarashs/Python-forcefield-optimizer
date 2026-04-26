@@ -56,6 +56,10 @@ PyField is a `pyfield/` Python package. The pieces:
   `LammpsRunner` (one LAMMPS instance reused across simulations with
   `clear` between), and a streaming `read_dump` + xyz reader for
   trajectory objectives.
+- **`pyfield.qm`** — the `pyfield qm-prep` subcommand and its
+  pluggable QM backends. `single_point` + `relax` cover every
+  registered objective. PySCF backend ships today; xTB / QE / GPAW /
+  ORCA slot in behind the same interface (one new file each).
 
 Adding a new objective or simulation type is a new file under the
 relevant subpackage — no schema or optimiser edits.
@@ -105,6 +109,25 @@ the optimiser, and plots the cost trace is in
 [`examples/cl2_walkthrough.ipynb`](examples/cl2_walkthrough.ipynb).
 The notebook is also a regression test — `pytest examples/` re-executes
 every cell.
+
+### Generating QM training data
+
+`pyfield qm-prep config.yaml` runs single-points and geometry
+optimisations for every `target: { from: dft }` placeholder in the
+config and writes a populated copy you can hand to `pyfield run`.
+Currently uses **PySCF** (pip-installable, no licence portal); xTB,
+Quantum ESPRESSO, GPAW, and ORCA backends slot in behind the same
+interface (one new file each). Commercial codes — Gaussian, VASP,
+Molpro — are intentionally not bundled.
+
+```bash
+pip install -e .[qm]                    # adds pyscf + ase
+pyfield qm-prep tests/cl2_qm.yaml       # populates the placeholders
+pyfield run     tests/cl2_qm.populated.yaml
+```
+
+The QM cache is content-keyed (`qm_cache/<sha256>/`), so re-running
+`qm-prep` after only FF-side edits is a no-op.
 
 A minimal user-facing schema looks like:
 

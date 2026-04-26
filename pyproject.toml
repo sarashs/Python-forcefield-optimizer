@@ -26,7 +26,16 @@ dependencies = [
 [project.optional-dependencies]
 mpi = ["lammps[mpi]"]
 nn  = ["tensorflow"]
-dev = ["pytest"]
+qm  = [                       # planned `pyfield qm-prep` backends (DEV.md §11)
+    "ase",                    # ASE Atoms + Calculator interface
+    "pyscf",                  # pure-Python Gaussian-basis DFT, pip-only
+]
+dev = [
+    "pytest",
+    "nbmake",                 # executes example notebooks as regression tests
+    "matplotlib",             # used by examples/cl2_walkthrough.ipynb
+    "pyscf",                  # the qm-prep preview cell
+]
 
 [project.scripts]
 pyfield = "pyfield.cli:main"
