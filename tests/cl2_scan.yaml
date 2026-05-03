@@ -1,0 +1,67 @@
+# tests/cl2_scan.yaml — full pipeline demo: qm-relax → make-scan → qm-prep → run.
+#
+# This is what a user types when they don't already know the equilibrium
+# Cl–Cl bond length: provide a *rough* guess (±1.10 Å, off from the real
+# ~1.028 Å), set `qm_relax: true`, and declare a `scans:` block with the
+# perturbation grid. The pipeline does the rest:
+#
+#   1. `pyfield qm-relax tests/cl2_scan.yaml -o tests/cl2_scan.relaxed.yaml`
+#      — PySCF geom-opt writes the relaxed coords back into atoms:
+#        and drops the qm_relax flag.
+#   2. `pyfield make-scan tests/cl2_scan.relaxed.yaml \
+#         -o tests/cl2_scan.scanned.yaml --xyz-dir tests/runs/scan_xyz`
+#      — expands the bond_stretch scan into 5 perturbed structures +
+#        single_point sims + energy_combination targets; dumps xyz
+#        snapshots for inspection / animation.
+#   3. `pyfield qm-prep tests/cl2_scan.scanned.yaml \
+#         -o tests/cl2_scan.populated.yaml`
+#      — fills every `target: { from: dft }` with the DFT ΔE.
+#   4. `pyfield run tests/cl2_scan.populated.yaml`
+#      — SA refit driven entirely by the QM-generated training data.
+
+forcefield:
+  path: tests/ffieldoriginal.txt
+  type: reaxff
+  params: tests/params
+
+qm:
+  code: pyscf
+  functional: b3lyp           # hybrid — pure functionals (LDA/PBE) overshoot
+                              # Cl–Cl dissociation by ~4× due to self-interaction
+                              # error. B3LYP/def2-SVP matches Gaussian numbers.
+  basis: def2-svp
+  cache_dir: tests/runs/qm_cache
+
+structures:
+  Cl2_Opt:
+    box: [100, 100, 100]
+    qm_relax: true            # qm-relax fills these coords in
+    atoms:
+      - { element: Cl, x: 0, y: 0, z: -1.10 }
+      - { element: Cl, x: 0, y: 0, z: +1.10 }
+
+simulations: {}               # populated by make-scan
+targets: []                   # populated by make-scan + qm-prep
+
+scans:
+  - type: bond_stretch
+    reference: Cl2_Opt
+    name_prefix: Cl2_d
+    atoms: [1, 2]
+    values: [1.6, 1.9, 2.2, 2.5, 3.0]   # absolute bond lengths in Å
+    target_weight: 1.0
+
+optimizer:
+  method: sa
+  T: 1.0
+  T_min: 0.1
+  alpha: 0.98
+  max_iter: 1000
+  number_of_points: 1
+  seed: 0
+  min_style: cg
+  record_costs: true
+
+output:
+  dir: tests/runs/cl2_scan_smoke
+  record_costs: true

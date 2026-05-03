@@ -56,10 +56,17 @@ PyField is a `pyfield/` Python package. The pieces:
   `LammpsRunner` (one LAMMPS instance reused across simulations with
   `clear` between), and a streaming `read_dump` + xyz reader for
   trajectory objectives.
-- **`pyfield.qm`** — the `pyfield qm-prep` subcommand and its
-  pluggable QM backends. `single_point` + `relax` cover every
-  registered objective. PySCF backend ships today; xTB / QE / GPAW /
-  ORCA slot in behind the same interface (one new file each).
+- **`pyfield.qm`** — the `pyfield qm-prep` and `pyfield qm-relax`
+  subcommands and their pluggable QM backends. `single_point` +
+  `relax` cover every registered objective. PySCF backend ships
+  today; xTB / QE / GPAW / ORCA / CP2K slot in behind the same
+  interface (one new file each).
+- **`pyfield.scans`** — the `pyfield make-scan` engine. Six geometric
+  perturbations (bond stretch, angle bend, dihedral, atom
+  displacement, dimer separation, isotropic scale); each scan kind is
+  one small function under `pyfield/scans/transforms.py`.
+- **`pyfield.viz`** — `animate_xyz_dir` for previewing scans in a
+  notebook. Pure matplotlib (no extra deps).
 
 Adding a new objective or simulation type is a new file under the
 relevant subpackage — no schema or optimiser edits.
@@ -112,22 +119,87 @@ every cell.
 
 ### Generating QM training data
 
-`pyfield qm-prep config.yaml` runs single-points and geometry
-optimisations for every `target: { from: dft }` placeholder in the
-config and writes a populated copy you can hand to `pyfield run`.
+The full pipeline starts from a rough geometry guess plus a perturbation
+grid; everything else is filled in for you:
+
+```bash
+pip install -e .[qm]                                          # pyscf + geometric
+
+pyfield qm-relax  tests/cl2_scan.yaml          -o cl2.relaxed.yaml
+pyfield make-scan cl2.relaxed.yaml             -o cl2.scanned.yaml \
+                                               --xyz-dir runs/scan_xyz
+pyfield qm-prep   cl2.scanned.yaml             -o cl2.populated.yaml
+pyfield run       cl2.populated.yaml
+```
+
+Step by step:
+
+- **`qm-relax`** runs PySCF geom-opt for every structure flagged
+  `qm_relax: true` and writes the relaxed coordinates back into the
+  YAML's `atoms:` block. Skip it if you already know the equilibrium
+  geometry.
+- **`make-scan`** consumes a top-level `scans:` block and stamps out N
+  perturbed structures + N matching `single_point` simulations + N
+  `energy_combination` targets (`Scan_i − reference`, with
+  `target: { from: dft }` waiting for `qm-prep`). Six scan kinds:
+  `bond_stretch`, `angle_bend`, `dihedral`, `atom_displacement`,
+  `dimer_separation`, `isotropic_scale`. Each generated structure also
+  lands as an `.xyz` under `--xyz-dir` so you can inspect them in
+  OVITO — or animate them inline (see below).
+- **`qm-prep`** fills every `target: { from: dft }` slot via the
+  configured QM backend. Hand-typed targets (empirical or experimental
+  numbers) pass through untouched, so DFT-driven and hand-typed targets
+  can coexist in one config.
+- **`pyfield run`** does the SA / GA refit on the fully populated
+  config.
+
 Currently uses **PySCF** (pip-installable, no licence portal); xTB,
-Quantum ESPRESSO, GPAW, and ORCA backends slot in behind the same
+Quantum ESPRESSO, GPAW, ORCA, and CP2K backends slot in behind the same
 interface (one new file each). Commercial codes — Gaussian, VASP,
 Molpro — are intentionally not bundled.
 
-```bash
-pip install -e .[qm]                    # adds pyscf + ase
-pyfield qm-prep tests/cl2_qm.yaml       # populates the placeholders
-pyfield run     tests/cl2_qm.populated.yaml
+The QM cache is content-keyed (`qm_cache/<sha256>/`), so re-running any
+step after only FF-side edits is a no-op.
+
+#### `scans:` schema
+
+```yaml
+scans:
+  - { type: bond_stretch,      reference: Cl2_Opt,
+      atoms: [1, 2], values: [1.6, 1.9, 2.2, 2.5, 3.0],
+      name_prefix: Cl2_d }
+  - { type: angle_bend,        reference: H2O_Opt,
+      atoms: [1, 2, 3],     range: [80, 130, 11],
+      name_prefix: H2O_a }                            # degrees
+  - { type: dihedral,          reference: H2O2_Opt,
+      atoms: [1, 2, 3, 4],  range: [-180, 180, 13],
+      name_prefix: H2O2_t }
+  - { type: atom_displacement, reference: Slab_Opt,
+      atom: 5, direction: [0, 0, 1], range: [-0.5, 0.5, 11],
+      name_prefix: Slab_z }
+  - { type: dimer_separation,  reference: Dim_Opt,
+      fragments: [[1, 2, 3], [4, 5, 6]], direction: auto,
+      values: [2.5, 3.0, 3.5, 4.0, 5.0],   name_prefix: Dim_r }
+  - { type: isotropic_scale,   reference: Cell_Opt,
+      range: [0.95, 1.05, 11], name_prefix: Cell_s }   # multiplier on box+atoms
 ```
 
-The QM cache is content-keyed (`qm_cache/<sha256>/`), so re-running
-`qm-prep` after only FF-side edits is a no-op.
+Pick exactly one of `values:` (explicit list) or `range: [start, stop,
+num]` (linspace) per scan. Atom indices are 1-based.
+
+#### Visualising scans inline
+
+`pyfield.viz.animate_xyz_dir(path)` reads every `.xyz` in a directory,
+builds a 3D-scatter `matplotlib` animation (atoms coloured by element),
+and embeds the play/slider widget in the notebook:
+
+```python
+from pyfield.viz import animate_xyz_dir
+animate_xyz_dir('runs/scan_xyz', pattern='Cl2_d_*.xyz', interval_ms=400)
+```
+
+Use it to confirm perturbations look the way you intended *before*
+paying for QM. Pure matplotlib — no extra deps.
 
 A minimal user-facing schema looks like:
 

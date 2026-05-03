@@ -158,6 +158,51 @@ class QmCfg(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# scans — consumed by `pyfield make-scan`, stripped from its output YAML.
+# Each entry expands into N structures + N single_point sims + N
+# energy_combination targets (Scan_i − reference). See pyfield.scans.
+# ---------------------------------------------------------------------------
+
+ScanType = Literal[
+    "bond_stretch",
+    "angle_bend",
+    "dihedral",
+    "atom_displacement",
+    "dimer_separation",
+    "isotropic_scale",
+]
+
+
+class ScanCfg(BaseModel):
+    """One perturbation sweep over a reference structure.
+
+    Per-type fields (`atoms`, `atom`, `direction`, `fragments`) live in
+    `extras` so adding a new scan kind is one new file under
+    `pyfield/scans/` without schema edits.
+    """
+    model_config = ConfigDict(extra="allow")
+    type: ScanType
+    reference: str                                  # name of the structure to perturb
+    name_prefix: str                                # generated structures: {prefix}_0, _1, …
+    values: Optional[List[float]] = None            # explicit list of scan points
+    range: Optional[Tuple[float, float, int]] = None  # (start, stop, num) → linspace
+    target_weight: float = 1.0                      # weight applied to each generated target
+
+    @model_validator(mode="after")
+    def _exactly_one_grid(self) -> "ScanCfg":
+        if (self.values is None) == (self.range is None):
+            raise ValueError(
+                f"scan {self.name_prefix!r}: provide exactly one of "
+                "`values:` (explicit list) or `range:` (start, stop, num)."
+            )
+        if self.range is not None and self.range[2] < 2:
+            raise ValueError(
+                f"scan {self.name_prefix!r}: range num must be ≥ 2, got {self.range[2]}"
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
 # placeholder predicate — `target: { from: dft }` style mappings
 # ---------------------------------------------------------------------------
 
@@ -180,6 +225,9 @@ class PyFieldConfig(BaseModel):
     optimizer: OptimizerCfg = Field(default_factory=OptimizerCfg)
     output: OutputCfg = Field(default_factory=OutputCfg)
     qm: Optional[QmCfg] = None
+    # `pyfield make-scan` consumes this and removes it from its output YAML.
+    # Other commands (`run`, `qm-prep`) tolerate it being present (a no-op).
+    scans: Optional[List[ScanCfg]] = None
 
     @model_validator(mode="after")
     def _qm_required_when_placeholders_exist(self) -> "PyFieldConfig":
@@ -237,4 +285,11 @@ class PyFieldConfig(BaseModel):
                             f"target #{i} (kind={tgt.kind!r}) references "
                             f"unknown simulation {sim_id!r} in `terms`"
                         )
+        # Every scan references a known structure.
+        for i, scan in enumerate(self.scans or []):
+            if scan.reference not in self.structures:
+                raise ValueError(
+                    f"scan #{i} ({scan.name_prefix!r}) references unknown "
+                    f"structure {scan.reference!r}"
+                )
         return self

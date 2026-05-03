@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from pyfield.config.schema import (
     AtomCfg,
@@ -52,6 +52,52 @@ def _write_xyz(path: Path, structure: StructureCfg) -> None:
     for a in structure.atoms:
         lines.append(f"{a.element} {a.x:.6f} {a.y:.6f} {a.z:.6f}")
     path.write_text("\n".join(lines) + "\n")
+
+
+def relax_structures(
+    cfg: PyFieldConfig,
+    *,
+    backend: QmBackend = None,
+    force: bool = False,
+    only: Optional[List[str]] = None,
+) -> Tuple[PyFieldConfig, List[Tuple[str, bool, str]]]:
+    """Run QM geom-opt for every `qm_relax: true` structure (or `only`),
+    return a config whose structures carry the relaxed coordinates and
+    whose `qm_relax` flags have been cleared.
+
+    Targets / placeholders are left untouched — this is the input to
+    `make-scan` (which needs equilibrium geometries) before `qm-prep`
+    fills in target values.
+    """
+    if cfg.qm is None:
+        raise ValueError("relax_structures called on a config without a `qm:` block")
+    backend = backend or make_backend(cfg.qm)
+    cache = QmCache(cfg.qm.cache_dir)
+    fingerprint = backend.settings_fingerprint()
+    journal: List[Tuple[str, bool, str]] = []
+
+    populated_structures: Dict[str, StructureCfg] = dict(cfg.structures)
+    requested = set(only) if only else None
+    if requested:
+        unknown = requested - set(cfg.structures)
+        if unknown:
+            raise ValueError(f"relax_structures: unknown structures {sorted(unknown)!r}")
+
+    for name, struct in cfg.structures.items():
+        if requested is None and not struct.qm_relax:
+            continue
+        if requested is not None and name not in requested:
+            continue
+        result, key, hit = cache.memoise_relax(
+            struct, fingerprint, "relax",
+            lambda s=struct: backend.relax(s),
+            force=force,
+        )
+        populated_structures[name] = result.structure
+        journal.append((f"relax {name}", hit, key))
+
+    populated = cfg.model_copy(update={"structures": populated_structures})
+    return populated, journal
 
 
 def populate_qm(
@@ -184,9 +230,15 @@ def populate_qm(
 # ---------------------------------------------------------------------------
 
 def cfg_to_yaml(cfg: PyFieldConfig) -> str:
-    """Serialise a PyFieldConfig to YAML preserving key order."""
+    """Serialise a PyFieldConfig to YAML preserving key order.
+
+    `exclude_defaults=True` keeps the output tight — `variables: {}`,
+    `qm_relax: false`, `weight: 1.0` etc. are stripped on the way out
+    and re-supplied by the schema on reload. Cross-tested by
+    `test_populated_yaml_round_trips_through_loader`.
+    """
     import yaml
-    d = cfg.model_dump(exclude_none=True, mode="python")
+    d = cfg.model_dump(exclude_none=True, exclude_defaults=True, mode="python")
     # Convert Path objects to strings for YAML cleanliness.
     def _coerce(v):
         if isinstance(v, Path):

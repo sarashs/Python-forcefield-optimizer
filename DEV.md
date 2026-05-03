@@ -37,33 +37,46 @@ traces.
 
 ### Pipeline
 
+The current (post-2026-05-02) pipeline:
+
 ```
-ffield.reax + params  ──► REAX_FF (parse)  ──► SA / GA (mutate params)
-                                                  │
-                          QM target (Training_data.py)
-                                                  ▼
-              LAMMPS_Utils.lammps_input_creator + geofilecreator
-                                                  ▼
-              LAMMPS (pair_style reax/c, fix qeq/reax) → minimize
-                                                  ▼
-              energy_charge() → cost_function() → accept/reject
-                                                  ▼
-                                            bestFF.reax
+   user.yaml                                                        rough geometry +
+       │                                                            scans block
+       ▼
+   pyfield qm-relax    ─► PySCF geom-opt ─► relaxed.yaml            equilibrium coords
+       │                                       │                     written into atoms:
+       ▼                                       │
+   pyfield make-scan    ─► six geometric  ─► scanned.yaml            structures + sims +
+       │                  transforms       + xyz snapshots           targets stamped out
+       ▼                                       │
+   pyfield qm-prep      ─► PySCF single-   ─► populated.yaml         every `from: dft`
+       │                  points              │                      slot filled
+       ▼                                       ▼
+   pyfield run         ──► REAX_FF + SA / GA ──► bestFF.reax         FF refit driven by
+                          (LAMMPS reaxff +                           the QM-generated
+                           qeq/reaxff)                                training set
 ```
 
-### Module map
+Every intermediate step is content-keyed (SHA-256 over canonical atoms
++ backend fingerprint + op), so repeated runs are no-ops on cache hits
+and a small change only re-runs what depends on it.
 
-| File              | Purpose                                                                 | State |
-|-------------------|-------------------------------------------------------------------------|-------|
-| `ForceField.py`   | `ForceField` base + `REAX_FF` parser/writer for `ffield.reax` files.    | Works but fragile (regex parsing, brittle whitespace handling). |
-| `REAXConstants.py`| Section IDs (`GENERAL_NUM=1`, `ATOMS_NUM=2`, …) used as dict keys.      | Trivial; fine. |
-| `Training_data.py`| Parses ENERGY/CHARGE blocks into `training_energy` / `training_charge`. | Works but parsing is regex-soup. |
-| `LAMMPS_Utils.py` | Builds LAMMPS data + input files, runs LAMMPS via `from lammps import lammps`, plus Avogadro/Gaussian helpers. | Works; lots of hard-coded LAMMPS commands. |
-| `SA.py`           | Base `SA` (skeleton) + `SA_REAX_FF` (full simulated annealing driver, optionally parallel via `multiprocessing.Pool`). | Functional core of the project. |
-| `GA.py`           | `GA` skeleton + `GA_REAX_FF` (cross-over + selection over an existing population). | Cross-over works; **no mutation**, no `population_init`, no full driver loop. |
-| `NNOpt.py`        | Neural-network surrogate for the energy. | Stub only — three `pass` methods. |
-| `__main__.py`     | One-liner that constructs `SA(...)` with positional args. | **Broken** (see §4). |
-| `temp.py`         | Scratch / commented-out experiments. | Should be deleted or moved to `examples/`. |
+### Module map (current `pyfield/` package)
+
+| Subpackage / module     | Purpose |
+|-------------------------|---------|
+| `pyfield.cli`           | `argparse` entry: `run`, `run-legacy`, `qm-prep`, `qm-relax`, `make-scan`. |
+| `pyfield.runner`        | Top-level orchestrators each subcommand calls; refuses to run an SA/GA on an unpopulated config. |
+| `pyfield.config`        | Pydantic schema + YAML loader; legacy-text → YAML shim under `legacy.py`. |
+| `pyfield.forcefield`    | ReaxFF parser / writer (`REAX_FF`) and `ForceField` base shaped for COMB/Tersoff/OPLS to slot in. |
+| `pyfield.simulations`   | Jinja-templated backends: `minimize`, `nvt`, `npt`, `single_point`, plus user-template escape hatch (`template:`) under a variable-leakage contract. |
+| `pyfield.objectives`    | Plug-in registry of cost-function pieces (`energy_combination`, `charges`, `coordination`, `structural_match`, `rdf_peak`, `forces`, `melting_onset`, `eos`). |
+| `pyfield.optimizers`    | `sa`, `ga`, `sa+ga` drivers consuming the objective registry. |
+| `pyfield.io`            | `LammpsRunner` (one long-lived `lammps()` reused with `clear`), `read_dump` streaming reader, structure-file writer. |
+| `pyfield.qm`            | `QmBackend` interface, content-keyed `QmCache`, `populate_qm` / `relax_structures`, and the PySCF backend MVP. |
+| `pyfield.scans`         | `expand_scans` engine + `transforms.py` (six geometric perturbation kinds). Consumed by `pyfield make-scan`. |
+| `pyfield.viz`           | `animate_xyz_dir` — pure-matplotlib in-notebook scan animation. |
+| `pyfield.diagnostics`   | `cost_breakdown(cfg, ffield_path?)` — runs every required sim once and reports per-sim energies + per-target residuals. Used by the notebook to compare initial vs post-SA FF. |
 
 ## 2. Setup and installation
 
@@ -829,6 +842,88 @@ Acceptance:
 ## 9. Change log
 
 Reverse-chronological track record of what's actually shipped.
+
+### 2026-05-02 — `qm-relax`, `make-scan`, in-notebook viz
+
+Two new helpers cover the workflow gap between "I have a rough geometry
+guess" and "I have a fully-populated training set", so a researcher
+never has to hand-craft scan structures or hand-type the equilibrium
+bond length.
+
+- **Schema** (`pyfield/config/schema.py`):
+  - `ScanCfg` model + new `scans: Optional[List[ScanCfg]]` top-level
+    field. Six discriminated `type:` values (bond_stretch, angle_bend,
+    dihedral, atom_displacement, dimer_separation, isotropic_scale).
+    `values:` xor `range:` enforced; cross-ref check makes
+    `reference:` resolve to a known structure.
+  - `cfg_to_yaml` now uses `exclude_defaults=True` so re-emitted YAML
+    stays tight (no `variables: {}`, `weight: 1.0`, `qm_relax: false`
+    clutter).
+- **Scans engine** (`pyfield/scans/`):
+  - `transforms.py` — pure geometric perturbation functions, one per
+    scan kind. 1-based atom indices on the public API; coincident /
+    collinear / zero-vector inputs raise. Bond stretch preserves the
+    midpoint; angle bend / dihedral keep all but the last atom fixed;
+    dihedral applies the IUPAC sign convention (verified against an
+    explicit Rodrigues rotation).
+  - `__init__.expand_scans(cfg, xyz_dir=...)` — orchestrator. Each
+    scan expands to N structures + N `single_point` sims + N
+    `energy_combination` targets (`Scan_i − reference`,
+    `target: { from: dft }`). The reference's `single_point` sim
+    (`{ref}_sp`) is created once and reused. Hand-typed
+    structures/sims/targets pass through. Generated structures get
+    `qm_relax: false` even if the reference was flagged (scan points
+    are evaluated at the perturbed geometry, never re-relaxed). xyz
+    snapshots dumped to `xyz_dir/{name}.xyz` for inspection.
+- **`qm-relax`** (`pyfield/qm/prep.py`, `pyfield/runner.py`,
+  `pyfield/cli.py`):
+  - `relax_structures(cfg, *, backend?, force?, only=[...])` extracts
+    the relax-only step from `populate_qm`. Walks structures with
+    `qm_relax: true` (or the `only` override), runs PySCF geom-opt,
+    drops the flag, returns the populated cfg + journal.
+  - `pyfield qm-relax INPUT.yaml [-o OUT] [--structures ...] [--force]`
+    is the CLI face. Default output path is `<input>.relaxed.yaml`.
+- **`make-scan`** (`pyfield/runner.py`, `pyfield/cli.py`):
+  - `pyfield make-scan INPUT.yaml [-o OUT] [--xyz-dir DIR]`. Reads the
+    `scans:` block, calls `expand_scans`, writes the expanded YAML
+    with `scans:` stripped. Default xyz dir is
+    `<output_yaml_dir>/scan_structures/`.
+- **Visualisation** (`pyfield/viz.py`):
+  - `animate_xyz_dir(directory, pattern='*.xyz', ...)` — pure
+    matplotlib `FuncAnimation` over a directory of xyz files; returns
+    an `IPython.display.HTML(jshtml)` for inline notebook rendering
+    (with `.anim` attached so the animation isn't garbage-collected).
+    CPK colours, atom-radius-scaled marker sizes, frame index parsed
+    from trailing `_N` in filenames so play order matches scan order.
+- **Demo + notebook**:
+  - `tests/cl2_scan.yaml` is a complete pipeline demo: rough Cl₂
+    guess at ±1.10 Å with `qm_relax: true`, single
+    `bond_stretch` scan over 5 distances [1.6, 1.9, 2.2, 2.5, 3.0] Å.
+  - `examples/cl2_walkthrough.ipynb` rewritten end-to-end:
+    1. load rough YAML, 2. `qm-relax` (1 PySCF run, 7 s),
+    3. `make-scan` (5 perturbations + xyz dump),
+    4. `animate_xyz_dir` inline preview,
+    5. `qm-prep` (6 single-points), 6. SA refit with before/after
+    `cost_breakdown`, 7. cost-trace plot, 8. cache-hit
+    reproducibility check.
+  - Total notebook wall-clock with a cold cache ≈ 43 s; warm cache
+    ≈ a few seconds.
+- **Tests added** (30, total 113):
+  - `test_scan_transforms.py` (19) — geometric correctness of every
+    scan kind: midpoint preservation, target-angle / target-distance
+    accuracy, collinear-start handling, zero-vector / out-of-range
+    rejections, internal-fragment-geometry preservation under
+    dimer_separation.
+  - `test_make_scan.py` (7) — end-to-end: bond_stretch expansion
+    cardinality + xyz output + bond-length round-trip,
+    hand-typed-targets pass through, YAML round-trip is a fixed
+    point, path-only references rejected loudly,
+    `range:` linspace works, schema rejects `values:` + `range:`
+    together and unknown references.
+  - `test_qm_relax.py` (5) — flagged-only behaviour, `only=[...]`
+    override, unknown-name rejection, YAML round-trip drops the
+    flag, cache idempotency.
+  - `test_viz.py` (2) — xyz round-trip + 3-frame headless animation.
 
 ### 2026-04-26 — `pyfield qm-prep` shipped (Phase 6 / §11 MVP)
 
