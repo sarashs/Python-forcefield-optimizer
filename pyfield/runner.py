@@ -40,6 +40,9 @@ def _dispatch(cfg) -> int:
     elif method in ("ga", "sa+ga"):
         from pyfield.optimizers.ga import run_ga
         result = run_ga(cfg)
+    elif method == "cma":
+        from pyfield.optimizers.cma import run_cma
+        result = run_cma(cfg)
     else:
         raise NotImplementedError(f"unknown optimizer.method={method!r}")
     print(f"FINAL cost: {result.final_cost}")

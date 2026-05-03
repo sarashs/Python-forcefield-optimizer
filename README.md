@@ -10,7 +10,7 @@ Supported today:
 
 - **Force fields**: ReaxFF.
 - **Optimisers**: simulated annealing (`sa`), genetic algorithm (`ga`),
-  hybrid (`sa+ga`).
+  hybrid (`sa+ga`), CMA-ES (`cma`).
 - **Simulation backends**: `minimize`, `nvt`, `npt`, `single_point`,
   plus a user-supplied Jinja template escape hatch.
 - **Objectives**: energy combinations, per-atom QEq charges,
@@ -51,7 +51,11 @@ PyField is a `pyfield/` Python package. The pieces:
 - **`pyfield.optimizers`** — drivers that consume the objective
   registry. `sa` (simulated annealing), `ga` (genetic algorithm with
   tournament selection / single-point crossover / Gaussian mutation /
-  elitism), and `sa+ga` (GA with per-child SA refinement).
+  elitism), `sa+ga` (GA with per-child SA refinement), and `cma`
+  (CMA-ES via the `cma` package — adapts the per-direction step size
+  + covariance from each generation's best samples). All four share
+  the parallel `BatchEvaluator` so candidate evaluation is
+  embarrassingly parallel across worker processes.
 - **`pyfield.io`** — structure-file writer, the long-lived
   `LammpsRunner` (one LAMMPS instance reused across simulations with
   `clear` between), and a streaming `read_dump` + xyz reader for
@@ -109,13 +113,32 @@ BUILD_SHARED_LIBS=on`.
 
 ## Examples
 
-The bundled `tests/cl2.yaml` is a complete, runnable Cl₂ ReaxFF refit
-that exercises all the major moving parts. Run it with `pyfield run
-tests/cl2.yaml`. A guided walkthrough that loads the same YAML, runs
-the optimiser, and plots the cost trace is in
-[`examples/cl2_walkthrough.ipynb`](examples/cl2_walkthrough.ipynb).
-The notebook is also a regression test — `pytest examples/` re-executes
-every cell.
+Two end-to-end notebooks demonstrate the full pipeline:
+
+- **[`examples/cl2_walkthrough.ipynb`](examples/cl2_walkthrough.ipynb)**
+  — minimal Cl₂ refit with a `bond_stretch` scan (`relax_method: rigid`,
+  fine for diatomics). Best entry point. ~45 s.
+- **[`examples/water_walkthrough.ipynb`](examples/water_walkthrough.ipynb)**
+  — full water (H/O) refit driven by four `relaxed_constrained` scans:
+  O–H bond stretch, H–O–H angle bend, water-dimer O…O separation, and
+  the explicit H…O hydrogen-bond distance scan. Uses
+  `tests/ffield.reax.HO` (Chenoweth/van Duin/Goddard 2008) as the
+  starting force field and `tests/params_HO` to select 11 trainable
+  parameters. **Heavy demo — excluded from the default `pytest`
+  collection**; run it manually:
+
+  ```bash
+  pytest examples/water_walkthrough.ipynb --nbmake --nbmake-timeout=1800
+  ```
+
+  First run takes ~25 min cold (16 constrained DFT relaxes); warm
+  cache re-runs are ~6–10 min (parallel SA over 23 LAMMPS sims is the
+  bottleneck once QM is cached).
+
+The Cl₂ notebook is a regression test (`pytest examples/` re-executes
+every cell).
+The shorter `tests/cl2.yaml` is also runnable directly without the
+notebook: `pyfield run tests/cl2.yaml` finishes in well under a second.
 
 ### Generating QM training data
 
@@ -139,13 +162,29 @@ Step by step:
   YAML's `atoms:` block. Skip it if you already know the equilibrium
   geometry.
 - **`make-scan`** consumes a top-level `scans:` block and stamps out N
-  perturbed structures + N matching `single_point` simulations + N
+  perturbed structures + N matching simulations + N
   `energy_combination` targets (`Scan_i − reference`, with
   `target: { from: dft }` waiting for `qm-prep`). Six scan kinds:
   `bond_stretch`, `angle_bend`, `dihedral`, `atom_displacement`,
   `dimer_separation`, `isotropic_scale`. Each generated structure also
   lands as an `.xyz` under `--xyz-dir` so you can inspect them in
   OVITO — or animate them inline (see below).
+
+  Each scan picks `relax_method`:
+  - `rigid` (default) — single-point at the perturbed geometry on both
+    QM and FF sides. Fine for diatomics or any system with no internal
+    DOFs to relax.
+  - `relaxed_constrained` — the reaction coordinate (distance / angle
+    / dihedral / dimer-anchor distance) is held fixed; QM does a
+    constrained geom-opt (geomeTRIC `$set`), FF does `minimize` with
+    `fix restrain` at the same constraint. Required for any polyatomic
+    system where substituents reorganize as you stretch / bend.
+
+  Per-scan `legs` and `anchors` declare which atoms move *as a rigid
+  group* with each anchor during the perturbation step (e.g. when
+  bending a Si–O–Si angle, the M's attached to each Si rotate with
+  their Si rather than staying fixed — the natural starting geometry
+  for the constrained relax that follows).
 - **`qm-prep`** fills every `target: { from: dft }` slot via the
   configured QM backend. Hand-typed targets (empirical or experimental
   numbers) pass through untouched, so DFT-driven and hand-typed targets
@@ -165,27 +204,67 @@ step after only FF-side edits is a no-op.
 
 ```yaml
 scans:
-  - { type: bond_stretch,      reference: Cl2_Opt,
-      atoms: [1, 2], values: [1.6, 1.9, 2.2, 2.5, 3.0],
-      name_prefix: Cl2_d }
-  - { type: angle_bend,        reference: H2O_Opt,
-      atoms: [1, 2, 3],     range: [80, 130, 11],
-      name_prefix: H2O_a }                            # degrees
-  - { type: dihedral,          reference: H2O2_Opt,
-      atoms: [1, 2, 3, 4],  range: [-180, 180, 13],
-      name_prefix: H2O2_t }
-  - { type: atom_displacement, reference: Slab_Opt,
-      atom: 5, direction: [0, 0, 1], range: [-0.5, 0.5, 11],
-      name_prefix: Slab_z }
-  - { type: dimer_separation,  reference: Dim_Opt,
-      fragments: [[1, 2, 3], [4, 5, 6]], direction: auto,
-      values: [2.5, 3.0, 3.5, 4.0, 5.0],   name_prefix: Dim_r }
-  - { type: isotropic_scale,   reference: Cell_Opt,
-      range: [0.95, 1.05, 11], name_prefix: Cell_s }   # multiplier on box+atoms
+  # Diatomic — no substituents to drag along; rigid is fine.
+  - type: bond_stretch
+    reference: Cl2_Opt
+    atoms: [1, 2]
+    values: [1.6, 1.9, 2.2, 2.5, 3.0]
+    name_prefix: Cl2_d
+
+  # Polyatomic — relaxed_constrained + legs so the substituents on
+  # each anchor rotate WITH it during the perturbation. QM then
+  # relaxes everything else with the angle held at the scan value.
+  - type: angle_bend
+    reference: SiOSi_Opt
+    atoms: [3, 1, 4]                # i=Si1, j=O (vertex), k=Si2
+    legs:
+      i: [5]                        # M1 attached to Si1 rotates with it
+      k: [6]                        # M2 attached to Si2 rotates with it
+    range: [80, 130, 11]            # degrees
+    relax_method: relaxed_constrained
+    name_prefix: SiOSi_a
+
+  - type: dihedral
+    reference: H2O2_Opt
+    atoms: [1, 2, 3, 4]
+    legs: { l: [4] }                # only the second H rotates
+    range: [-180, 180, 13]          # degrees
+    relax_method: relaxed_constrained
+    name_prefix: H2O2_t
+
+  # Dimer separation — anchor atoms drive the constraint, fragments
+  # ride along rigidly during perturbation, QM relaxes them after.
+  - type: dimer_separation
+    reference: Si2OH8_Opt
+    anchors: [1, 6]                 # the two Si atoms
+    fragments:
+      - [2, 3, 4, 5]                # OHs of fragment 1 (Si1 implicit)
+      - [7, 8, 9, 10]               # OHs of fragment 2
+    values: [3.5, 4.0, 5.0, 6.0]
+    relax_method: relaxed_constrained
+    name_prefix: SiOH4_dim
+
+  - type: atom_displacement
+    reference: Slab_Opt
+    atom: 5
+    direction: [0, 0, 1]
+    range: [-0.5, 0.5, 11]
+    name_prefix: Slab_z
+
+  - type: isotropic_scale
+    reference: Cell_Opt
+    range: [0.95, 1.05, 11]         # multiplier on box+atoms
+    name_prefix: Cell_s
 ```
 
 Pick exactly one of `values:` (explicit list) or `range: [start, stop,
 num]` (linspace) per scan. Atom indices are 1-based.
+
+`relax_method: rigid` (default) is right for any scan with no internal
+DOFs to relax (diatomics, fixed cells). `relax_method:
+relaxed_constrained` is the physically correct choice for polyatomics
+— QM `geomeTRIC $set` constraint + FF `fix restrain` at the matching
+distance / angle / dihedral / anchor-anchor distance.
 
 #### Visualising scans inline
 
@@ -280,6 +359,18 @@ output:
   is one new file, no schema edit.
 - Long-lived LAMMPS instance with `clear` between simulations
   (faster than spawning a fresh `lammps()` per call).
+- **Parallel cost evaluation** (`optimizer.parallel: true`,
+  `optimizer.processors: N`). Each `ProcessPoolExecutor` worker holds
+  its own long-lived `LammpsRunner` and per-worker scratch directory
+  (so `*.data` / `*.in` / `*.lammpstrj` files don't collide). SA
+  evaluates `number_of_points` walker candidates per cooling step in
+  one batch; GA evaluates the whole population per generation;
+  `sa+ga` runs each child's SA refinement on its own worker. With
+  `optimizer.seed` set, the run is bit-identical regardless of worker
+  count — every random number is drawn on the master.
+- **`tqdm` progress bar** showing iteration / generation, current
+  best cost, and current temperature; auto-suppressed when stderr is
+  not a tty (CI).
 - Bit-reproducible runs via `optimizer.seed`.
 - Single-MD-feeds-many-objectives via simulation deduplication in the
   cost-evaluation loop.

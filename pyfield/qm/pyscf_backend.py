@@ -25,6 +25,22 @@ from pyfield.qm.base import QmBackend, QmRelaxResult, QmSinglePoint
 
 # Hartree → kcal/mol; Ångström unchanged.
 _HA_TO_KCAL = 627.5095
+
+
+def _render_geometric_constraint(constraint) -> str:
+    """Render a `ConstraintSpec` as a geomeTRIC `$set` block (1-based atoms).
+
+    geomeTRIC syntax:
+        $set
+        distance i j r0
+        angle i j k theta0
+        dihedral i j k l phi0
+        $end
+    """
+    kind = constraint["kind"]
+    atoms = " ".join(str(a) for a in constraint["atoms"])
+    value = constraint["value"]
+    return f"$set\n{kind} {atoms} {value}\n$end\n"
 # PySCF derivatives are in Hartree/Bohr → convert to kcal/mol/Å.
 _BOHR_TO_A = 0.529177210903
 _GRAD_HA_BOHR_TO_KCAL_A = _HA_TO_KCAL / _BOHR_TO_A
@@ -90,11 +106,28 @@ class PySCFBackend(QmBackend):
             forces_kcal_mol_per_A=forces,
         )
 
-    def relax(self, structure: StructureCfg) -> QmRelaxResult:
+    def relax(
+        self,
+        structure: StructureCfg,
+        constraint=None,
+    ) -> QmRelaxResult:
         mf = self._build_mf(structure)
         # geometric_solver is the standard ASE-free PySCF optimiser.
         from pyscf.geomopt.geometric_solver import optimize as geom_optimize
-        new_mol = geom_optimize(mf)
+        kwargs = {}
+        if constraint is not None:
+            # geomeTRIC reads constraints from a $set / $freeze block in
+            # a small text file. We render an in-memory string and write
+            # it to a temp file because the API takes a path.
+            import tempfile
+            spec = _render_geometric_constraint(constraint)
+            tf = tempfile.NamedTemporaryFile(
+                "w", suffix=".geometric.txt", delete=False
+            )
+            tf.write(spec)
+            tf.close()
+            kwargs["constraints"] = tf.name
+        new_mol = geom_optimize(mf, **kwargs)
         # Recompute the energy at the relaxed geometry to be sure.
         from pyscf import dft, scf
         if self.functional.lower() in ("hf",):

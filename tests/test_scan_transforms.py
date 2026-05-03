@@ -150,27 +150,87 @@ def test_atom_displacement_rejects_zero_vector():
 
 def test_dimer_separation_auto_direction():
     s = _struct([[0, 0, 0], [2, 0, 0]], ["Cl", "Cl"])
-    s2 = T.dimer_separation(s, [[1], [2]], "auto", 5.0)
+    s2 = T.dimer_separation(s, anchors=[1, 2], fragments=[[], []], value=5.0)
     c = _coords(s2)
-    assert np.allclose(c[1], [5, 0, 0])
+    # Anchor-anchor distance hits target; midpoint preserved.
+    assert np.isclose(np.linalg.norm(c[1] - c[0]), 5.0)
+    assert np.allclose(0.5 * (c[0] + c[1]), [1.0, 0, 0])
 
 
 def test_dimer_separation_preserves_internal_geometry():
-    """Translating fragment 2 must keep its internal bonds intact."""
+    """Translating fragments must keep their internal bonds intact."""
     s = _struct(
         [[0, 0, 0], [1, 0, 0], [3, 0, 0], [4, 0, 0]],
         ["O", "H", "O", "H"],
     )
-    # fragments: water1 = [1,2], water2 = [3,4].
-    s2 = T.dimer_separation(s, [[1, 2], [3, 4]], "auto", 6.0)
+    # anchors = the two O's (atoms 1, 3); H of each goes with its O.
+    s2 = T.dimer_separation(s, anchors=[1, 3], fragments=[[2], [4]], value=6.0)
     c = _coords(s2)
     # Internal H-O distance preserved within each fragment.
     assert np.isclose(np.linalg.norm(c[1] - c[0]), 1.0)
     assert np.isclose(np.linalg.norm(c[3] - c[2]), 1.0)
-    # COM-COM distance hits target.
-    com1 = 0.5 * (c[0] + c[1])
-    com2 = 0.5 * (c[2] + c[3])
-    assert np.isclose(np.linalg.norm(com2 - com1), 6.0)
+    # Anchor-anchor distance hits target.
+    assert np.isclose(np.linalg.norm(c[2] - c[0]), 6.0)
+
+
+def test_dimer_separation_fragments_translate_with_anchors():
+    """Si(OH)4-like: Si-Si separation drags every OH along with its Si."""
+    # 2 Si's + 4 dummy O's per Si, all on the x-axis around the Si.
+    s = _struct(
+        [[0, 0, 0], [0.5, 0, 0],     # Si1, O attached to Si1
+         [3, 0, 0], [3.5, 0, 0]],    # Si2, O attached to Si2
+        ["Si", "O", "Si", "O"],
+    )
+    s2 = T.dimer_separation(s, anchors=[1, 3], fragments=[[2], [4]], value=5.0)
+    c = _coords(s2)
+    # Si-Si distance hits target.
+    assert np.isclose(np.linalg.norm(c[2] - c[0]), 5.0)
+    # Each O stays at +0.5 from its Si on the x-axis.
+    assert np.isclose(c[1][0] - c[0][0], 0.5)
+    assert np.isclose(c[3][0] - c[2][0], 0.5)
+
+
+def test_bond_stretch_with_legs_drags_substituents():
+    """Methane-like C-C stretch: H's of each C move with their C."""
+    # C1, C2, plus a phantom H attached to each.
+    s = _struct(
+        [[0, 0, 0], [1.5, 0, 0],     # C1, C2
+         [-0.3, 0.5, 0], [1.8, 0.5, 0]],   # H on C1, H on C2
+        ["C", "C", "H", "H"],
+    )
+    s2 = T.bond_stretch(s, [1, 2], 2.0, legs={"i": [3], "j": [4]})
+    c = _coords(s2)
+    # C-C stretched to 2.0; midpoint preserved at (0.75, 0, 0).
+    assert np.isclose(np.linalg.norm(c[1] - c[0]), 2.0)
+    assert np.allclose(0.5 * (c[0] + c[1]), [0.75, 0, 0])
+    # Each H rides with its C.
+    assert np.allclose(c[2] - c[0], [-0.3, 0.5, 0])
+    assert np.allclose(c[3] - c[1], [0.3, 0.5, 0])
+
+
+def test_angle_bend_rotates_leg_k():
+    """Si–O–Si bend: M2 rotates around O along with Si2 (its anchor)."""
+    # Si1 - O - Si2, with M2 attached to Si2.
+    s = _struct(
+        [[1.6, 0, 0],   # Si1 (i)
+         [0, 0, 0],     # O   (j) — vertex
+         [-1.6, 0, 0],  # Si2 (k)
+         [-2.6, 0, 0]], # M2 attached to Si2 (in legs.k)
+        ["Si", "O", "Si", "M"],
+    )
+    s2 = T.angle_bend(s, [1, 2, 3], 90.0, legs={"k": [4]})
+    c = _coords(s2)
+    # Si-O-Si is now 90°.
+    v1 = c[0] - c[1]; v2 = c[2] - c[1]
+    cos_a = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+    assert np.isclose(np.degrees(np.arccos(np.clip(cos_a, -1, 1))), 90.0)
+    # Si1 (i, no leg) stayed put.
+    assert np.allclose(c[0], [1.6, 0, 0])
+    # M2's distance from Si2 is preserved (rigid translation under rotation).
+    assert np.isclose(np.linalg.norm(c[3] - c[2]), 1.0)
+    # M2 is on the far side of Si2 from O — still collinear with Si2-O reflected.
+    along = (c[3] - c[2]) / np.linalg.norm(c[3] - c[2])
+    assert np.allclose(along, (c[2] - c[1]) / np.linalg.norm(c[2] - c[1]))
 
 
 # ---------------------------------------------------------------------------

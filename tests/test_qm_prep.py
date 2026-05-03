@@ -39,7 +39,7 @@ class _FakeBackend(QmBackend):
             forces_kcal_mol_per_A=np.zeros((len(structure.atoms), 3)),
         )
 
-    def relax(self, structure):
+    def relax(self, structure, constraint=None):
         z = self.relax_table.get(structure.atoms[1].z, structure.atoms[1].z)
         new_atoms = [
             structure.atoms[0],
@@ -98,8 +98,9 @@ def test_populator_journal_reports_actions(tmp_path):
     _, journal = populate_qm(cfg, backend=backend)
     actions = [a for a, _, _ in journal]
     assert "relax Cl2_Opt" in actions
-    # Two single-points, one per term in the combination.
-    assert "single_point Cl2_Opt_min" in actions
+    # Cl2_Opt was just relaxed, so its energy is reused (no redundant SP).
+    assert "reuse_relax_energy Cl2_Opt_min" in actions
+    # Cl2_414 wasn't relaxed; it gets a single_point.
     assert "single_point Cl2_414_min" in actions
 
 

@@ -54,6 +54,17 @@ def _write_xyz(path: Path, structure: StructureCfg) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
+def _structure_constraint(structure: StructureCfg) -> Optional[Dict]:
+    """Pull the optional per-structure `constraint:` from `__pydantic_extra__`.
+
+    `make-scan` attaches one to every relaxed_constrained scan point. The
+    populator hands it to the backend so QM holds the same coordinate
+    fixed that the FF-side `fix restrain` does.
+    """
+    extras = getattr(structure, "__pydantic_extra__", {}) or {}
+    return extras.get("constraint")
+
+
 def relax_structures(
     cfg: PyFieldConfig,
     *,
@@ -64,6 +75,10 @@ def relax_structures(
     """Run QM geom-opt for every `qm_relax: true` structure (or `only`),
     return a config whose structures carry the relaxed coordinates and
     whose `qm_relax` flags have been cleared.
+
+    Each structure may carry a `constraint:` field (set by `make-scan`
+    on relaxed_constrained scan points); if so, the relax holds that
+    coordinate fixed.
 
     Targets / placeholders are left untouched — this is the input to
     `make-scan` (which needs equilibrium geometries) before `qm-prep`
@@ -88,13 +103,16 @@ def relax_structures(
             continue
         if requested is not None and name not in requested:
             continue
+        constraint = _structure_constraint(struct)
+        op = "relax" if constraint is None else "relax_constrained"
         result, key, hit = cache.memoise_relax(
-            struct, fingerprint, "relax",
-            lambda s=struct: backend.relax(s),
+            struct, fingerprint, op,
+            lambda s=struct, c=constraint: backend.relax(s, constraint=c),
             force=force,
+            constraint=constraint,
         )
         populated_structures[name] = result.structure
-        journal.append((f"relax {name}", hit, key))
+        journal.append((f"{op} {name}", hit, key))
 
     populated = cfg.model_copy(update={"structures": populated_structures})
     return populated, journal
@@ -125,17 +143,25 @@ def populate_qm(
     # ------------------------------------------------------------------
     # 1. Relax structures flagged `qm_relax: true`. Their post-relax atoms
     #    end up in the populated YAML; the flag itself is dropped.
+    #    A `constraint:` field on the structure (set by make-scan for
+    #    relaxed_constrained scan points) is forwarded to the backend
+    #    so QM holds the same coordinate the FF-side fix restrain does.
     # ------------------------------------------------------------------
+    relax_energies: Dict[str, float] = {}        # name → kcal/mol of the relaxed structure
     for name, struct in cfg.structures.items():
         if not struct.qm_relax:
             continue
+        constraint = _structure_constraint(struct)
+        op = "relax" if constraint is None else "relax_constrained"
         result, key, hit = cache.memoise_relax(
-            struct, fingerprint, "relax",
-            lambda s=struct: backend.relax(s),
+            struct, fingerprint, op,
+            lambda s=struct, c=constraint: backend.relax(s, constraint=c),
             force=force,
+            constraint=constraint,
         )
         populated_structures[name] = result.structure
-        journal.append((f"relax {name}", hit, key))
+        relax_energies[name] = result.energy_kcal_mol
+        journal.append((f"{op} {name}", hit, key))
 
     # ------------------------------------------------------------------
     # 2. Single-points for every simulation referenced by a `from: dft`
@@ -155,6 +181,16 @@ def populate_qm(
 
     sp_results: Dict[str, QmSinglePoint] = {}
     for sim_id, struct in needed_sp.items():
+        struct_name = cfg.simulations[sim_id].structure
+        # If we just relaxed this structure (constrained or not), the
+        # relax already produced the energy at that geometry — reuse it
+        # instead of paying for a redundant single_point.
+        if struct_name in relax_energies:
+            sp_results[sim_id] = QmSinglePoint(
+                energy_kcal_mol=relax_energies[struct_name]
+            )
+            journal.append((f"reuse_relax_energy {sim_id}", True, ""))
+            continue
         result, key, hit = cache.memoise_single_point(
             struct, fingerprint, "single_point",
             lambda s=struct: backend.single_point(s),

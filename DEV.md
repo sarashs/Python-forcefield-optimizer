@@ -843,6 +843,234 @@ Acceptance:
 
 Reverse-chronological track record of what's actually shipped.
 
+### 2026-05-03 — CMA-ES optimizer (`method: cma`)
+
+A third optimiser alongside SA and GA, via the `cma` package
+(Hansen et al.). Same parallel + reproducibility contract as the
+others — drops into the existing `BatchEvaluator` so each generation's
+population evaluates concurrently.
+
+- **`pyfield/optimizers/cma.py`** (new):
+  - `run_cma(cfg)` builds a `cma.CMAEvolutionStrategy` with `x0` = the
+    current FF values, `sigma0 = cma_sigma0 * median(span)`, and
+    explicit per-parameter `bounds=[lower, upper]`.
+  - Each generation: `es.ask()` proposes `popsize` candidates, master
+    clips them to bounds and rounds to 4 dp (the ReaxFF text writer
+    pads each column to 10 chars; full-precision floats overflow),
+    then `evaluator.evaluate_batch(...)` runs them in parallel.
+    `es.tell(raw_candidates, costs)` updates the covariance.
+  - Best-so-far tracking + tqdm bar showing `gen=…, best=…, sigma=…`.
+- **Schema** (`pyfield/config/schema.py`): `OptimizerCfg.method` now
+  accepts `"cma"`. Two new fields:
+  - `cma_sigma0: float = 0.3` — initial step size as a fraction of
+    the median parameter span. 0.3 covers ~3 σ across each bounded
+    interval at start.
+  - `cma_popsize: int = 0` — 0 → cma's default `4 + floor(3 ln N)`;
+    set explicitly to override.
+- **Runner** (`pyfield/runner.py`): `_dispatch` routes `method: cma`
+  to `run_cma`. Same pre-flight `_check_no_qm_placeholders` runs first.
+- **Dependencies** (`pyproject.toml`): `cma` extra
+  (`pip install -e .[cma]`); pulled into the `dev` extra so the
+  bundled tests run.
+- **Tests added** (4, total 137):
+  - `tests/test_cma.py` — parallel matches serial bit-for-bit at
+    fixed seed; runs are deterministic across re-runs; CMA reduces
+    the initial cost on the Cl₂ scan; bestFF.reax gets written.
+
+### 2026-05-02 — `relaxed_constrained` scans + water (H/O) walkthrough
+
+Adds first-class support for "relaxed scans" — perturb the reaction
+coordinate, hold it fixed, relax everything else on both QM and FF
+sides. Required for any polyatomic where substituents reorganise as
+you stretch / bend. Ships with a complete water training example to
+prove out the chain end-to-end.
+
+- **Schema** (`pyfield/config/schema.py`):
+  - New `ScanCfg` fields: `relax_method` (`rigid` | `relaxed_constrained`,
+    default `rigid` for backward compatibility), `restraint_k` (FF-side
+    `fix restrain` spring constant, default 2000), `legs`
+    (`Dict[str, List[int]]` for bond_stretch / angle_bend / dihedral),
+    `anchors` + `fragments` (for dimer_separation).
+  - Per-type validators reject overlapping legs, atoms in vertex
+    positions (angle vertex j, dihedral middle atoms j+k), and
+    `relax_method: relaxed_constrained` on `isotropic_scale`. Errors
+    name the offending atoms.
+  - `StructureCfg.model_config` now uses `extra="allow"` so generated
+    scan structures can carry a `constraint:` dict consumed by
+    `qm-prep`. Round-trips through YAML cleanly.
+
+- **Leg-aware transforms** (`pyfield/scans/transforms.py`):
+  - `bond_stretch`, `angle_bend`, `dihedral`, `dimer_separation`
+    rewritten so atoms in `legs.i` / `legs.j` / `legs.k` / `legs.l` (or
+    `fragments`) translate / rotate as **rigid groups** with their
+    anchor. So a Si–O–Si angle bend with M1 in `legs.i` and M2 in
+    `legs.k` rotates the M's around the central O along with their
+    Si's; a Si(OH)₄ dimer separation drags every OH along with its
+    central Si. Vertex / middle atoms always stay fixed.
+  - `dimer_separation` is now anchor-driven (the user picks two
+    central atoms whose distance is the scan coordinate). The legacy
+    COM-based form is gone — anchor-anchor distance is what FF-side
+    `fix restrain bond i j K K r0` and QM-side geomeTRIC `$set
+    distance i j r0` both speak.
+
+- **expand_scans** (`pyfield/scans/__init__.py`):
+  - For `relax_method: relaxed_constrained`, the per-scan-point
+    simulation is `type: minimize` carrying a `restraints: ["bond i
+    j K K r0"]` (or `angle …`, `dihedral …`) string built from the
+    scan kind. The reference simulation stays `type: single_point`.
+  - Each generated structure carries a `constraint: {kind, atoms,
+    value}` dict + `qm_relax: true` so `qm-prep` runs the matching
+    constrained QM relax on each one.
+
+- **QM backend** (`pyfield/qm/base.py`, `pyfield/qm/pyscf_backend.py`):
+  - `QmBackend.relax(structure, constraint=None)` accepts a
+    `ConstraintSpec`. PySCF backend renders it as a geomeTRIC `$set`
+    block (`distance i j r0`, `angle i j k θ0`, or
+    `dihedral i j k l φ0`) and passes it to
+    `pyscf.geomopt.geometric_solver.optimize` via the `constraints`
+    keyword — geomeTRIC enforces the constraint exactly during the
+    optimisation.
+
+- **Cache** (`pyfield/qm/cache.py`):
+  - `_key()` now hashes the constraint spec into the cache key, so
+    two relaxes at different scan-point values land in different
+    cache entries even when the input geometry is identical.
+    `memoise_relax(..., constraint=…)` threads it through.
+
+- **Populator** (`pyfield/qm/prep.py`):
+  - `relax_structures` and `populate_qm` walk each structure's
+    `__pydantic_extra__["constraint"]` and forward it to the backend.
+  - For relaxed_constrained scan points, the QM relax already
+    produced the energy at the constrained-relaxed geometry — the
+    populator now reuses it instead of paying for a redundant
+    single-point. Halves the per-scan-point QM cost.
+
+- **H/O starting force field** (`tests/ffield.reax.HO`,
+  `tests/params_HO`):
+  - Bundled the LAMMPS-shipped Chenoweth/van Duin/Goddard 2008
+    c/h/o combustion ReaxFF (`ffield.reax.cho` from
+    `lammps/share/lammps/potentials/`) renamed for clarity. C
+    parameters stay dormant; only H + O are activated by the
+    `pair_coeff` element list.
+  - `tests/params_HO` selects 11 trainable parameters: H–O bond
+    De,σ + p(be1) + p(ovun1); H–O–H angle θ₀ + p(val1); H–O
+    off-diagonal Dij + RvdW; and per-element QEq χ + η for both
+    H and O. Brackets the Chenoweth-2008 starting values.
+
+- **Water walkthrough notebook**
+  (`examples/water_walkthrough.ipynb`, `tests/water_train.yaml`):
+  - Three `relaxed_constrained` scans on water (single H₂O O–H
+    stretch, H–O–H bend, water-dimer H-bond distance).
+  - Full pipeline: `qm-relax` (finds H₂O eq at 0.97 Å / 103° and
+    dimer eq at 2.77 Å O–O) → `make-scan` (16 perturbed structures)
+    → animate → `qm-prep` (16 B3LYP/def2-SVP constrained relaxes,
+    cached) → SA refit (4 walkers × 4 processors) → before/after
+    `cost_breakdown` showing the SA reduces total cost by ~42%
+    (277 → 160 in 71 SA steps with the demo settings).
+  - Total wall-clock: ~4 min with warm QM cache, ~25 min from a
+    cold cache (16 constrained DFT relaxes dominate).
+
+- **Tests added** (11, total 132):
+  - `test_constrained_scan.py` covers schema validation
+    (overlapping legs, vertex in leg, dihedral middle atom in
+    leg, dimer_separation requiring anchors+fragments,
+    isotropic_scale rejecting relaxed_constrained), expand_scans
+    wiring (minimize sims with bond/angle restraints, constraint
+    on each generated structure, YAML round-trip), and
+    end-to-end populate_qm forwarding the constraint to the
+    backend (using a recording fake backend).
+  - Existing `test_scan_transforms.py` extended with leg-aware
+    cases: bond_stretch with substituent legs, angle_bend with
+    leg.k rotating, anchor-driven dimer_separation preserving
+    fragment internals.
+
+### 2026-05-02 — Parallel SA / GA cost evaluation + `tqdm` progress bar
+
+The hot path in both optimizers is the per-candidate LAMMPS evaluation.
+Both now batch their candidates and farm them out to a
+`ProcessPoolExecutor`, with each worker holding its own long-lived
+`LammpsRunner` and per-worker scratch directory.
+
+- **`pyfield/optimizers/parallel.py`** (new):
+  - `_init_worker` — process-pool initializer. Calls `preload_libmpi()`
+    (the parent's preload doesn't survive `spawn`), validates the
+    `cfg_dump` into a `PyFieldConfig`, parses the FF, builds the
+    objective list, and creates an isolated `out_dir/worker_<pid>/`
+    so per-sim files (`*.data`, `*.in`, `*.lammpstrj`, `*.log`) don't
+    collide between concurrent workers — that collision was the cause
+    of the LAMMPS "Energy was not tallied on needed timestep" error
+    when multiple workers ran the same simulation in parallel.
+  - `_evaluate_in_worker(values)` — apply the parameter snapshot to
+    the worker's FF, run every required simulation, return the summed
+    residual.
+  - `_refine_in_worker((values, T, steps, seed))` — per-child SA
+    refinement for `method: sa+ga`. Uses a master-supplied seed so
+    the refinement is reproducible regardless of which worker handles
+    a given child.
+  - `BatchEvaluator(cfg, n_workers=N)` context manager. `n_workers ≤
+    1` short-circuits to an in-process serial evaluator (no executor
+    spinup); `n_workers ≥ 2` spawns a `ProcessPoolExecutor(mp_context=
+    spawn)`. **Spawn (not fork) is required** — when the master has
+    already preloaded MPI for its own LAMMPS, forked children inherit
+    the mid-init MPI state and trip the same "Energy was not tallied"
+    check.
+  - `resolve_n_workers(parallel, processors)` translates the schema
+    fields to a worker count: `parallel: false` → 1; `parallel: true,
+    processors: 0` → `cpu_count()`; otherwise `processors`.
+- **SA rewrite** (`pyfield/optimizers/sa.py`):
+  - `number_of_points` is now the number of independent SA walkers.
+    Each cooling step proposes one perturbation per walker (master
+    RNG), evaluates all of them in a single `evaluator.evaluate_batch`
+    call, then applies Metropolis per walker on the master.
+  - Trace = best cost across walkers per inner step.
+  - Reproducibility: every random draw happens on the master before
+    submitting the batch, so the run is bit-identical for any
+    `processors` count.
+- **GA rewrite** (`pyfield/optimizers/ga.py`):
+  - Initial population eval is one batch.
+  - Each generation builds new children serially (selection /
+    crossover / mutation are negligible cost), then evaluates them
+    all in one batch.
+  - For `method: sa+ga` the batch is a `refine_batch`: each child
+    gets a deterministic seed and is refined for `sa_refine_steps`
+    Metropolis kicks on its own worker.
+- **Schema** (`pyfield/config/schema.py`):
+  - `OptimizerCfg.show_progress: bool = True` — toggles the `tqdm`
+    bar. Tests set it to `False` to keep stderr clean.
+  - Existing `parallel: bool` and `processors: int` are now load-bearing.
+- **Progress bar**: `tqdm.auto` instance per top-level loop (cooling
+  steps × inner iters for SA, generations for GA). `set_postfix`
+  shows `T=…, best=…` for SA and `gen=…, best=…` for GA. Falls back
+  to a no-op shim when stderr isn't a tty or when `tqdm` isn't
+  installed.
+- **`tqdm` is now a hard dependency** (`pyproject.toml`) — it was
+  already pulled in transitively by `matplotlib`, but listing it
+  explicitly avoids surprise breakages on minimal installs.
+- **Tests added** (5, total 119):
+  - `test_parallel_optimizers.py::test_sa_parallel_matches_serial_for_same_seed`
+    — 4-walker SA serial vs 4-walker SA / 4-processor parallel
+    produce bit-identical traces.
+  - `test_sa_parallel_is_deterministic_across_runs` — re-running
+    parallel SA with the same seed gives the same final cost +
+    trace.
+  - `test_sa_walkers_explore_more_than_one` — 4 walkers find a
+    cost ≤ 1 walker for the same seed (more proposals per step =
+    better trajectory).
+  - `test_ga_parallel_matches_serial_for_same_seed` — same
+    bit-identical guarantee for plain GA.
+  - `test_sa_ga_parallel_matches_serial_for_same_seed` — same for
+    `sa+ga` (per-child refinement is deterministic across workers).
+
+Pitfalls debugged on the way:
+
+1. **fork inherited mid-init MPI state from the parent.** Symptom:
+   first worker eval succeeded, second/third failed with "Energy was
+   not tallied". Fix: `mp_context=spawn`.
+2. **Workers raced on shared per-sim files.** Symptom: the same
+   "Energy was not tallied" error appearing 3–5 batches in. Fix:
+   per-worker `out_dir/worker_<pid>/` so each worker writes its own
+   `Cl2_Opt_sp.in` / `.data` / `.lammpstrj` / `.log`.
+
 ### 2026-05-02 — `qm-relax`, `make-scan`, in-notebook viz
 
 Two new helpers cover the workflow gap between "I have a rough geometry

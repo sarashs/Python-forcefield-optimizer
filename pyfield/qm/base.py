@@ -3,19 +3,31 @@
 Two operations cover every objective today (see DEV.md §11.2):
 
 - `single_point(structure)` → `QmSinglePoint(energy, forces, charges?)`
-- `relax(structure)` → `QmRelaxResult(structure, energy)`
+- `relax(structure, constraint?)` → `QmRelaxResult(structure, energy)`
 
 Energies are returned in **kcal/mol** and forces in **kcal/mol/Å** — the
 backend does the unit conversion from whatever its native units are.
+
+A `ConstraintSpec` is the geometric constraint enforced during a relax
+— distance / angle / dihedral on a small atom tuple. The same spec
+drives the FF-side `fix restrain` so QM and FF agree on what's held
+fixed (and what's free to relax) at each scan point.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional, TypedDict
 
 import numpy as np
 
 from pyfield.config.schema import StructureCfg
+
+
+class ConstraintSpec(TypedDict):
+    """A relax-time geometric constraint, shared by QM and FF sides."""
+    kind: Literal["distance", "angle", "dihedral"]
+    atoms: List[int]      # 1-based; len 2 for distance, 3 for angle, 4 for dihedral
+    value: float          # Å for distance, degrees for angle / dihedral
 
 
 @dataclass
@@ -41,7 +53,15 @@ class QmBackend:
     def single_point(self, structure: StructureCfg) -> QmSinglePoint:  # pragma: no cover
         raise NotImplementedError
 
-    def relax(self, structure: StructureCfg) -> QmRelaxResult:  # pragma: no cover
+    def relax(
+        self,
+        structure: StructureCfg,
+        constraint: Optional[ConstraintSpec] = None,
+    ) -> QmRelaxResult:  # pragma: no cover
+        """Relax `structure`. If `constraint` is given, hold that
+        coordinate fixed during the optimisation (for relaxed scan
+        points). Backends that can't enforce a constraint raise
+        `NotImplementedError` with a clear pointer."""
         raise NotImplementedError
 
     def settings_fingerprint(self) -> str:

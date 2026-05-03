@@ -21,11 +21,13 @@ dependencies = [
     "pyyaml",
     "pydantic>=2",
     "jinja2",
+    "tqdm",                  # progress bars for SA / GA / CMA loops
 ]
 
 [project.optional-dependencies]
 mpi = ["lammps[mpi]"]
 nn  = ["tensorflow"]
+cma = ["cma"]                 # CMA-ES optimizer (`method: cma`)
 qm  = [                       # planned `pyfield qm-prep` backends (DEV.md §11)
     "ase",                    # ASE Atoms + Calculator interface
     "pyscf",                  # pure-Python Gaussian-basis DFT, pip-only
@@ -35,6 +37,7 @@ dev = [
     "nbmake",                 # executes example notebooks as regression tests
     "matplotlib",             # used by examples/cl2_walkthrough.ipynb
     "pyscf",                  # the qm-prep preview cell
+    "cma",                    # so test_cma.py runs in dev installs
 ]
 
 [project.scripts]

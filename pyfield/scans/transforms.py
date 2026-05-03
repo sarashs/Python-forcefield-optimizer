@@ -6,11 +6,23 @@ a new `StructureCfg` with perturbed atoms. The originals are not mutated.
 Atom indices in the public API are **1-based** (matches LAMMPS / xyz
 conventions and the rest of the YAML). Internally we convert to 0-based
 indices once at the top of each function.
+
+Every kind that has multiple anchor atoms accepts an optional `legs`
+mapping ({"i": [...], "j": [...]} for bond_stretch, etc.). A leg lists
+the atoms that move *as a rigid group* with their anchor — so when you
+bend a Si–O–Si angle and put M1 in `legs.i` and M2 in `legs.k`, the M's
+rotate with their Si rather than staying put. If `legs` is omitted, only
+the anchor itself moves (the historical behaviour, fine for diatomics
+and any scan whose substituents don't matter).
+
+The validator on `ScanCfg` enforces the structural rules (no overlap,
+vertex never in a leg, etc.) so these functions can assume a consistent
+spec.
 """
 from __future__ import annotations
 
 import math
-from typing import List, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Union
 
 import numpy as np
 
@@ -42,6 +54,10 @@ def _idx(i: int, n_atoms: int, name: str) -> int:
     return i - 1
 
 
+def _idx_list(xs: Sequence[int], n_atoms: int, name: str) -> List[int]:
+    return [_idx(x, n_atoms, name) for x in xs]
+
+
 def _resolve_direction(d: Union[str, Sequence[float]]) -> np.ndarray:
     if isinstance(d, str):
         if d.lower() == "x": return np.array([1.0, 0.0, 0.0])
@@ -66,12 +82,32 @@ def _rotate_about_axis(point: np.ndarray, axis: np.ndarray, origin: np.ndarray,
     return rotated + origin
 
 
+def _resolve_leg(legs: Optional[Dict[str, List[int]]], role: str,
+                 implicit_anchor: int, n_atoms: int, scan_label: str) -> List[int]:
+    """Return 0-based indices of every atom that moves with `role`'s anchor.
+
+    The anchor atom itself is always included (whether or not the user
+    listed it). `implicit_anchor` is 1-based.
+    """
+    members = list((legs or {}).get(role) or [])
+    if implicit_anchor not in members:
+        members.append(implicit_anchor)
+    return _idx_list(members, n_atoms, f"{scan_label}.legs.{role}")
+
+
 # ---------------------------------------------------------------------------
 # bond_stretch — atoms: [i, j], value = target |r_j − r_i| in Å.
-# Midpoint of (i, j) is preserved; both atoms move along the bond axis.
+# Midpoint of (i, j) is preserved. `legs={"i": [...], "j": [...]}` rigidly
+# translates each leg so its anchor lands at the new position.
 # ---------------------------------------------------------------------------
 
-def bond_stretch(structure: StructureCfg, atoms: Sequence[int], value: float) -> StructureCfg:
+def bond_stretch(
+    structure: StructureCfg,
+    atoms: Sequence[int],
+    value: float,
+    *,
+    legs: Optional[Dict[str, List[int]]] = None,
+) -> StructureCfg:
     if len(atoms) != 2:
         raise ValueError(f"bond_stretch: atoms must have length 2, got {atoms!r}")
     n = len(structure.atoms)
@@ -84,19 +120,33 @@ def bond_stretch(structure: StructureCfg, atoms: Sequence[int], value: float) ->
     if norm < 1e-12:
         raise ValueError(f"bond_stretch: atoms {atoms!r} are coincident — can't define bond axis")
     unit = axis / norm
+    new_i = midpoint - 0.5 * value * unit
+    new_j = midpoint + 0.5 * value * unit
+
+    leg_i = _resolve_leg(legs, "i", atoms[0], n, "bond_stretch")
+    leg_j = _resolve_leg(legs, "j", atoms[1], n, "bond_stretch")
+
+    delta_i = new_i - ri
+    delta_j = new_j - rj
     coords = coords.copy()
-    coords[i] = midpoint - 0.5 * value * unit
-    coords[j] = midpoint + 0.5 * value * unit
+    coords[leg_i] = coords[leg_i] + delta_i
+    coords[leg_j] = coords[leg_j] + delta_j
     return _replace_coords(structure, coords)
 
 
 # ---------------------------------------------------------------------------
 # angle_bend — atoms: [i, j, k] (j is the vertex), value in degrees.
-# i and j are kept fixed; k is rotated around the axis perpendicular to
-# the (i, j, k) plane passing through j until the angle equals `value`.
+# i and j are kept fixed (along with `legs.i`); k and its leg rotate
+# around the axis perpendicular to the (i, j, k) plane through j.
 # ---------------------------------------------------------------------------
 
-def angle_bend(structure: StructureCfg, atoms: Sequence[int], value_deg: float) -> StructureCfg:
+def angle_bend(
+    structure: StructureCfg,
+    atoms: Sequence[int],
+    value_deg: float,
+    *,
+    legs: Optional[Dict[str, List[int]]] = None,
+) -> StructureCfg:
     if len(atoms) != 3:
         raise ValueError(f"angle_bend: atoms must have length 3, got {atoms!r}")
     n = len(structure.atoms)
@@ -109,29 +159,34 @@ def angle_bend(structure: StructureCfg, atoms: Sequence[int], value_deg: float) 
     v_jk = rk - rj
     n_ji = np.linalg.norm(v_ji); n_jk = np.linalg.norm(v_jk)
     if n_ji < 1e-12 or n_jk < 1e-12:
-        raise ValueError(f"angle_bend: degenerate angle — vertex coincides with neighbour")
+        raise ValueError("angle_bend: degenerate angle — vertex coincides with neighbour")
     cos_curr = float(np.clip(np.dot(v_ji, v_jk) / (n_ji * n_jk), -1.0, 1.0))
     angle_curr = math.acos(cos_curr)
     angle_target = math.radians(value_deg)
     delta = angle_target - angle_curr
-    # Rotation axis = v_ji × v_jk (perpendicular to the plane). For a
-    # collinear triple we fall back to any perpendicular to v_jk.
+
     axis = np.cross(v_ji, v_jk)
     if np.linalg.norm(axis) < 1e-9:
-        # pick any axis perpendicular to v_jk
         ref = np.array([1.0, 0.0, 0.0]) if abs(v_jk[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
         axis = np.cross(v_jk, ref)
     axis = axis / np.linalg.norm(axis)
+
+    leg_k = _resolve_leg(legs, "k", atoms[2], n, "angle_bend")
+
     coords = coords.copy()
-    coords[k] = _rotate_about_axis(rk, axis, rj, delta)
+    for atom_idx in leg_k:
+        coords[atom_idx] = _rotate_about_axis(coords[atom_idx], axis, rj, delta)
+    # Note: leg_i (if any) stays fixed by construction — rotating only the
+    # k-side is sufficient to set the target angle and matches what the
+    # user expects when, e.g., the i-leg already sits at a known reference.
     return _replace_coords(structure, coords)
 
 
 # ---------------------------------------------------------------------------
 # dihedral — atoms: [i, j, k, l], value = target dihedral angle (deg).
 # Convention: dihedral is the angle between the (i, j, k) and (j, k, l)
-# planes, measured looking along j → k. i, j, k are fixed; l is rotated
-# around the j–k axis.
+# planes, measured looking along j → k. i, j, k are fixed; l and
+# `legs.l` rotate around the j–k axis.
 # ---------------------------------------------------------------------------
 
 def _dihedral_angle(p1, p2, p3, p4) -> float:
@@ -146,7 +201,13 @@ def _dihedral_angle(p1, p2, p3, p4) -> float:
     return math.atan2(y, x)
 
 
-def dihedral(structure: StructureCfg, atoms: Sequence[int], value_deg: float) -> StructureCfg:
+def dihedral(
+    structure: StructureCfg,
+    atoms: Sequence[int],
+    value_deg: float,
+    *,
+    legs: Optional[Dict[str, List[int]]] = None,
+) -> StructureCfg:
     if len(atoms) != 4:
         raise ValueError(f"dihedral: atoms must have length 4, got {atoms!r}")
     n = len(structure.atoms)
@@ -164,16 +225,19 @@ def dihedral(structure: StructureCfg, atoms: Sequence[int], value_deg: float) ->
     if norm < 1e-12:
         raise ValueError("dihedral: middle atoms are coincident")
     axis = axis / norm
-    # Rodrigues with right-hand rule about (p3 − p2) rotates the IUPAC
-    # dihedral by −delta, hence the sign flip below.
+
+    leg_l = _resolve_leg(legs, "l", atoms[3], n, "dihedral")
+
     coords = coords.copy()
-    coords[l] = _rotate_about_axis(p4, axis, p3, -delta)
+    # Right-hand rule about (p3 − p2) rotates the IUPAC dihedral by
+    # −delta, hence the sign flip.
+    for atom_idx in leg_l:
+        coords[atom_idx] = _rotate_about_axis(coords[atom_idx], axis, p3, -delta)
     return _replace_coords(structure, coords)
 
 
 # ---------------------------------------------------------------------------
 # atom_displacement — single atom shifted along `direction` by `value` Å.
-# All other atoms stay put. Useful for vacancy / surface displacement scans.
 # ---------------------------------------------------------------------------
 
 def atom_displacement(structure: StructureCfg, atom: int,
@@ -187,43 +251,61 @@ def atom_displacement(structure: StructureCfg, atom: int,
 
 
 # ---------------------------------------------------------------------------
-# dimer_separation — fragments: [[…], […]] of 1-based indices, value =
-# target COM-COM distance along `direction` ('auto' or 3-vec). Fragment 1
-# is held fixed; fragment 2 is translated along `direction` so the new
-# COM-COM distance equals `value`.
+# dimer_separation — anchor-driven. `anchors=[a, b]` are the two central
+# atoms whose distance is the scan coordinate; `fragments=[f_a, f_b]`
+# are the atoms that translate rigidly with each anchor (anchors are
+# included implicitly). Symmetric expansion: midpoint preserved, both
+# fragments translate along the anchor-anchor axis.
 # ---------------------------------------------------------------------------
 
-def dimer_separation(structure: StructureCfg, fragments: Sequence[Sequence[int]],
-                     direction: Union[str, Sequence[float]], value: float) -> StructureCfg:
+def dimer_separation(
+    structure: StructureCfg,
+    anchors: Sequence[int],
+    fragments: Sequence[Sequence[int]],
+    value: float,
+    *,
+    direction: Union[str, Sequence[float]] = "auto",
+) -> StructureCfg:
+    if len(anchors) != 2:
+        raise ValueError(f"dimer_separation: anchors must have length 2, got {anchors!r}")
     if len(fragments) != 2:
         raise ValueError(f"dimer_separation: fragments must have length 2, got {len(fragments)}")
     n = len(structure.atoms)
-    f1 = [_idx(x, n, "dimer_separation.fragments[0]") for x in fragments[0]]
-    f2 = [_idx(x, n, "dimer_separation.fragments[1]") for x in fragments[1]]
-    if not f1 or not f2:
-        raise ValueError("dimer_separation: each fragment must list at least one atom")
+    a1 = _idx(anchors[0], n, "dimer_separation.anchors[0]")
+    a2 = _idx(anchors[1], n, "dimer_separation.anchors[1]")
+    if a1 == a2:
+        raise ValueError(f"dimer_separation: anchors must be distinct, got {anchors!r}")
+
+    f1 = _idx_list(list(set([anchors[0], *fragments[0]])), n, "dimer_separation.fragments[0]")
+    f2 = _idx_list(list(set([anchors[1], *fragments[1]])), n, "dimer_separation.fragments[1]")
+
     coords = _coords(structure)
-    com1 = coords[f1].mean(axis=0)
-    com2 = coords[f2].mean(axis=0)
+    r1, r2 = coords[a1], coords[a2]
+    sep = r2 - r1
+    norm = np.linalg.norm(sep)
+    if norm < 1e-9 and (isinstance(direction, str) and direction.lower() == "auto"):
+        raise ValueError(
+            "dimer_separation: anchors coincide; pass an explicit `direction:`"
+        )
     if isinstance(direction, str) and direction.lower() == "auto":
-        sep = com2 - com1
-        if np.linalg.norm(sep) < 1e-9:
-            raise ValueError("dimer_separation: fragments coincide; pass an explicit direction")
-        unit = sep / np.linalg.norm(sep)
+        unit = sep / norm
     else:
         unit = _resolve_direction(direction)
-    new_com2 = com1 + value * unit
-    delta = new_com2 - com2
+
+    midpoint = 0.5 * (r1 + r2)
+    new_r1 = midpoint - 0.5 * value * unit
+    new_r2 = midpoint + 0.5 * value * unit
+    delta1 = new_r1 - r1
+    delta2 = new_r2 - r2
+
     coords = coords.copy()
-    coords[f2] = coords[f2] + delta
+    coords[f1] = coords[f1] + delta1
+    coords[f2] = coords[f2] + delta2
     return _replace_coords(structure, coords)
 
 
 # ---------------------------------------------------------------------------
 # isotropic_scale — multiply every coordinate (and the box) by `value`.
-# Standard EOS / cell-volume scan. Atom positions scale relative to the
-# box origin (not COM) so the fractional coordinates of each atom are
-# preserved.
 # ---------------------------------------------------------------------------
 
 def isotropic_scale(structure: StructureCfg, value: float) -> StructureCfg:

@@ -20,7 +20,7 @@ class _FakeBackend(QmBackend):
     def single_point(self, structure):
         return QmSinglePoint(energy_kcal_mol=0.0)
 
-    def relax(self, structure):
+    def relax(self, structure, constraint=None):
         z = self.relax_table.get(structure.atoms[1].z, structure.atoms[1].z)
         new_atoms = [
             structure.atoms[0],

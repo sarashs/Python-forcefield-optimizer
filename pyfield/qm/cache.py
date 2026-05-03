@@ -41,11 +41,24 @@ def _canonical_atoms(structure: StructureCfg) -> str:
     }, sort_keys=True)
 
 
-def _key(structure: StructureCfg, fingerprint: str, op: str) -> str:
+def _canonical_constraint(constraint) -> str:
+    """Stable JSON of a constraint spec for cache keying. None → ''."""
+    if not constraint:
+        return ""
+    return json.dumps({
+        "kind": constraint["kind"],
+        "atoms": [int(a) for a in constraint["atoms"]],
+        "value": round(float(constraint["value"]), 6),
+    }, sort_keys=True)
+
+
+def _key(structure: StructureCfg, fingerprint: str, op: str,
+         constraint=None) -> str:
     h = hashlib.sha256()
     h.update(_canonical_atoms(structure).encode())
     h.update(fingerprint.encode())
     h.update(op.encode())
+    h.update(_canonical_constraint(constraint).encode())
     return h.hexdigest()[:16]
 
 
@@ -134,8 +147,9 @@ class QmCache:
         compute: Callable[[], QmRelaxResult],
         *,
         force: bool = False,
+        constraint=None,
     ) -> tuple[QmRelaxResult, str, bool]:
-        key = _key(structure, fingerprint, op)
+        key = _key(structure, fingerprint, op, constraint=constraint)
         if not force and self.has(key):
             return self._load_relax(key), key, True
         result = compute()

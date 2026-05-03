@@ -37,8 +37,14 @@ class AtomCfg(BaseModel):
 
 
 class StructureCfg(BaseModel):
-    """One simulation cell. Either inline `atoms` or external `path` (xyz)."""
-    model_config = ConfigDict(extra="forbid")
+    """One simulation cell. Either inline `atoms` or external `path` (xyz).
+
+    `extra="allow"` so `pyfield make-scan` can attach a `constraint:`
+    dict on relaxed_constrained scan points (consumed by `qm-prep` to
+    drive a constrained QM relax). Any extra you set will round-trip
+    through the YAML serialiser.
+    """
+    model_config = ConfigDict(extra="allow")
     box: Tuple[float, float, float]
     atoms: Optional[List[AtomCfg]] = None
     path: Optional[Path] = None
@@ -106,19 +112,20 @@ class TargetCfg(BaseModel):
 
 class OptimizerCfg(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    method: Literal["sa", "ga", "sa+ga"] = "sa"
+    method: Literal["sa", "ga", "sa+ga", "cma"] = "sa"
     # SA
     T: float = 1.0
     T_min: float = 1e-5
     alpha: float = 0.1
     max_iter: int = 50
     number_of_points: int = 1
-    parallel: bool = False
-    processors: int = 0
+    parallel: bool = False              # if true, evaluate candidates concurrently
+    processors: int = 0                 # 0 = cpu_count() when parallel; else N workers
     seed: Optional[int] = None
     repelling_weight: float = 0.0
     min_style: str = "cg"
     record_costs: bool = True
+    show_progress: bool = True          # tqdm progress bar (auto-suppressed in non-tty)
     # GA
     generations: int = 20
     population_size: int = 16
@@ -130,6 +137,9 @@ class OptimizerCfg(BaseModel):
     # Hybrid: when method="sa+ga", run this many SA refinement steps on each
     # newly-bred child before the next generation evaluates it.
     sa_refine_steps: int = 5
+    # CMA-ES (when method="cma")
+    cma_sigma0: float = 0.3       # initial step size as a fraction of (max-min)
+    cma_popsize: int = 0          # 0 → cma's default 4 + floor(3*ln(N))
 
 
 # ---------------------------------------------------------------------------
@@ -173,12 +183,31 @@ ScanType = Literal[
 ]
 
 
+RelaxMethod = Literal["rigid", "relaxed_constrained"]
+
+
 class ScanCfg(BaseModel):
     """One perturbation sweep over a reference structure.
 
     Per-type fields (`atoms`, `atom`, `direction`, `fragments`) live in
     `extras` so adding a new scan kind is one new file under
     `pyfield/scans/` without schema edits.
+
+    `legs` and `anchors`/`fragments` opt the scan into rigid-group
+    perturbation: when bending a Si–O–Si angle, the user can declare
+    that the substituents on each Si rotate *with* their Si rather
+    than staying fixed (the natural starting geometry for a
+    constrained relax). See `pyfield/scans/transforms.py` for the
+    per-kind semantics.
+
+    `relax_method`:
+    - `rigid` (default) — single-point at the perturbed geometry on
+      both QM and FF sides; comparable only when the system has no
+      internal degrees of freedom (diatomics, fixed cells).
+    - `relaxed_constrained` — QM constrained geom-opt (geomeTRIC `$set`)
+      + FF constrained minimization (`fix restrain` at `restraint_k`).
+      The reaction coordinate (distance / angle / dihedral) is held
+      fixed on both sides; everything else relaxes.
     """
     model_config = ConfigDict(extra="allow")
     type: ScanType
@@ -187,6 +216,12 @@ class ScanCfg(BaseModel):
     values: Optional[List[float]] = None            # explicit list of scan points
     range: Optional[Tuple[float, float, int]] = None  # (start, stop, num) → linspace
     target_weight: float = 1.0                      # weight applied to each generated target
+
+    relax_method: RelaxMethod = "rigid"
+    restraint_k: float = 2000.0                     # kcal/mol/Å² for FF-side fix restrain
+    legs: Optional[Dict[str, List[int]]] = None     # role ("i"/"j"/"k"/"l") → atoms
+    anchors: Optional[List[int]] = None             # dimer_separation: [a1, a2]
+    fragments: Optional[List[List[int]]] = None     # dimer_separation: atoms per fragment
 
     @model_validator(mode="after")
     def _exactly_one_grid(self) -> "ScanCfg":
@@ -200,6 +235,132 @@ class ScanCfg(BaseModel):
                 f"scan {self.name_prefix!r}: range num must be ≥ 2, got {self.range[2]}"
             )
         return self
+
+    @model_validator(mode="after")
+    def _legs_and_anchors_well_formed(self) -> "ScanCfg":
+        """Per-type structural validation for `legs` / `anchors` / `fragments`.
+
+        Rejects overlapping legs, atoms in forbidden positions (vertex /
+        dihedral middle), and missing required fields for
+        `dimer_separation`. The transform code can then assume the
+        spec is consistent.
+        """
+        legs = self.legs or {}
+        extras = self.__pydantic_extra__ or {}
+        atoms = extras.get("atoms")
+
+        if self.type == "bond_stretch":
+            allowed = {"i", "j"}
+            unknown = set(legs) - allowed
+            if unknown:
+                raise ValueError(
+                    f"scan {self.name_prefix!r}: bond_stretch.legs keys must be "
+                    f"a subset of {sorted(allowed)}, got extra {sorted(unknown)}"
+                )
+            if atoms is not None and len(atoms) >= 2:
+                _reject_overlap_for_pair(self.name_prefix, legs, atoms,
+                                         pair_keys=("i", "j"))
+
+        elif self.type == "angle_bend":
+            allowed = {"i", "k"}
+            unknown = set(legs) - allowed
+            if unknown:
+                raise ValueError(
+                    f"scan {self.name_prefix!r}: angle_bend.legs keys must be "
+                    f"a subset of {sorted(allowed)}, got extra {sorted(unknown)}"
+                )
+            if atoms is not None and len(atoms) == 3:
+                vertex = atoms[1]
+                _reject_atom_in_legs(self.name_prefix, legs, vertex,
+                                     "vertex (atoms[1])")
+                _reject_overlap_for_pair(self.name_prefix, legs, atoms,
+                                         pair_keys=("i", "k"))
+
+        elif self.type == "dihedral":
+            allowed = {"i", "l"}
+            unknown = set(legs) - allowed
+            if unknown:
+                raise ValueError(
+                    f"scan {self.name_prefix!r}: dihedral.legs keys must be "
+                    f"a subset of {sorted(allowed)}, got extra {sorted(unknown)}"
+                )
+            if atoms is not None and len(atoms) == 4:
+                for forbidden, label in ((atoms[1], "atoms[1] (j)"),
+                                         (atoms[2], "atoms[2] (k)")):
+                    _reject_atom_in_legs(self.name_prefix, legs, forbidden, label)
+
+        elif self.type == "dimer_separation":
+            if not self.anchors or len(self.anchors) != 2:
+                raise ValueError(
+                    f"scan {self.name_prefix!r}: dimer_separation requires "
+                    "`anchors: [atom_i, atom_j]`"
+                )
+            if not self.fragments or len(self.fragments) != 2:
+                raise ValueError(
+                    f"scan {self.name_prefix!r}: dimer_separation requires "
+                    "`fragments: [[…], […]]` (one list per anchor)"
+                )
+            a1, a2 = self.anchors
+            if a1 == a2:
+                raise ValueError(
+                    f"scan {self.name_prefix!r}: dimer_separation anchors "
+                    f"must be distinct, got {self.anchors}"
+                )
+            f1, f2 = (set(self.fragments[0]) | {a1}), (set(self.fragments[1]) | {a2})
+            overlap = f1 & f2
+            if overlap:
+                raise ValueError(
+                    f"scan {self.name_prefix!r}: dimer_separation fragments "
+                    f"overlap on atoms {sorted(overlap)} — each atom must "
+                    "belong to exactly one fragment."
+                )
+            if a2 in f1 - {a2}:
+                raise ValueError(
+                    f"scan {self.name_prefix!r}: anchor {a2} appears in "
+                    "fragments[0]"
+                )
+            if a1 in f2 - {a1}:
+                raise ValueError(
+                    f"scan {self.name_prefix!r}: anchor {a1} appears in "
+                    "fragments[1]"
+                )
+
+        if self.relax_method == "relaxed_constrained" and self.type == "isotropic_scale":
+            raise ValueError(
+                f"scan {self.name_prefix!r}: relax_method=relaxed_constrained "
+                "isn't meaningful for isotropic_scale (no internal DOFs to "
+                "relax — the scale factor *is* the constraint)."
+            )
+        return self
+
+
+def _reject_atom_in_legs(scan_name: str, legs, atom: int, label: str) -> None:
+    for role, members in legs.items():
+        if atom in members:
+            raise ValueError(
+                f"scan {scan_name!r}: atom {atom} ({label}) cannot appear in "
+                f"legs.{role!r}; the vertex / middle atoms of the constraint "
+                "must stay fixed."
+            )
+
+
+def _reject_overlap_for_pair(scan_name: str, legs, atoms, pair_keys) -> None:
+    """For bond_stretch / angle_bend: each leg must include its anchor and
+    the two legs must be disjoint."""
+    a, b = pair_keys
+    set_a = set(legs.get(a) or []) | ({atoms[0]} if a == "i" and len(atoms) >= 1 else set())
+    if b == "j":
+        set_b = set(legs.get(b) or []) | ({atoms[1]} if len(atoms) >= 2 else set())
+    elif b == "k":
+        set_b = set(legs.get(b) or []) | ({atoms[2]} if len(atoms) >= 3 else set())
+    else:
+        set_b = set(legs.get(b) or [])
+    overlap = set_a & set_b
+    if overlap:
+        raise ValueError(
+            f"scan {scan_name!r}: legs.{a!r} and legs.{b!r} overlap on atoms "
+            f"{sorted(overlap)} — each atom must move with at most one anchor."
+        )
 
 
 # ---------------------------------------------------------------------------
