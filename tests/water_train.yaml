@@ -134,20 +134,20 @@ scans:
 
   #optimizer:
   #  method: sa
-  #  T: 0.5
-  #  T_min: 0.05
-  #  alpha: 0.30                  # quick demo; bump down to 0.1 for production refits
-  #  max_iter: 5                  # quick demo; bump up to 50-200 for production
+  #  T: 1
+  #  T_min: 0.01
+  #  alpha: 0.99                  # quick demo; bump down to 0.1 for production refits
+  #  max_iter: 1000                  # quick demo; bump up to 50-200 for production
   #  number_of_points: 4          # 4 SA walkers
   #  parallel: true
   #  processors: 4                # 4 worker processes
   #  seed: 0
   #  min_style: cg
-  #  show_progress: false         # the notebook re-enables this where useful
+  #  show_progress: true         # the notebook re-enables this where useful
   #  record_costs: true
 optimizer:
   method: cma
-  generations: 30
+  generations: 1000
   cma_sigma0: 0.3
   parallel: true
   processors: 4

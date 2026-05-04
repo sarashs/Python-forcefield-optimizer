@@ -47,7 +47,9 @@ class CMAResult:
 
 
 def _make_progress(total: int, *, enabled: bool, desc: str):
-    if not enabled or not sys.stderr.isatty():
+    """`tqdm.auto` picks notebook widget / terminal text / plain auto;
+    we only gate on `show_progress` itself."""
+    if not enabled:
         class _Null:
             def update(self, n=1): pass
             def set_postfix(self, **kw): pass

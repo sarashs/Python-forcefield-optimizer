@@ -58,8 +58,14 @@ def _propose(
 
 
 def _make_progress(total: int, *, enabled: bool, desc: str):
-    """Return either a tqdm bar or a no-op shim with `.update` / `.set_postfix`."""
-    if not enabled or not sys.stderr.isatty():
+    """Return either a `tqdm.auto` bar or a no-op shim.
+
+    `tqdm.auto` picks the right renderer for the medium (notebook
+    widget in Jupyter, text bar in a terminal, plain text otherwise),
+    so we don't gate on `sys.stderr.isatty()` — that returned False
+    inside Jupyter and silently swallowed the bar.
+    """
+    if not enabled:
         class _Null:
             def update(self, n=1): pass
             def set_postfix(self, **kw): pass
@@ -96,13 +102,19 @@ def run_sa(cfg: PyFieldConfig) -> SAResult:
     n_walkers = max(1, o.number_of_points)
 
     # Total number of inner iterations the SA loop will run, used to size
-    # the progress bar accurately. Cooling: T_k = T * (1 - alpha)^k; loop
-    # while T_k > T_min  ⇒  k_max = floor(log(T_min / T) / log(1 - alpha)) + 1.
-    if o.alpha <= 0 or o.alpha >= 1 or o.T_min >= o.T:
-        n_outer = 1
-    else:
-        import math
-        n_outer = max(1, int(math.log(o.T_min / o.T) / math.log(1 - o.alpha)) + 1)
+    # the progress bar accurately. The closed-form ceil(log/log) version
+    # is off-by-one in floating point (e.g. T=1, T_min=0.01, alpha=0.99
+    # mathematically gives one cooling step but FP drift on the
+    # multiplicative update lands one extra iteration). Simulating the
+    # loop is O(n_cooling_steps) — typically a few hundred — and exact.
+    n_outer = 0
+    if 0 < o.alpha < 1 and o.T > o.T_min:
+        T_sim = float(o.T)
+        while T_sim > o.T_min:
+            n_outer += 1
+            T_sim *= (1 - o.alpha)
+            if n_outer > 10_000_000:                # safety against alpha≈0 typos
+                break
     total_iters = n_outer * o.max_iter
 
     with BatchEvaluator(
