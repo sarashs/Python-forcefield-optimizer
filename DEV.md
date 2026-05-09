@@ -1018,6 +1018,29 @@ Acceptance:
 
 Reverse-chronological track record of what's actually shipped.
 
+### 2026-05-09 — QM accuracy bump on the GST bulk stack
+
+Audit of QE settings prompted by the question "are we converged?".
+Demo-grade defaults (`ecutwfc: 40, kpts: [1,1,1], conv_thr: 1e-7`)
+turned out to be on the wrong side of accuracy/cost for the strain
+scans — Γ-only sampling alone introduces ~5–15 % stress-tensor error
+and ~10–25 % elastic-constant error, comparable to the ReaxFF
+residuals CMA was trying to fit. Bumped `studies/gst_drift/gst_drift.yaml`
+to `ecutwfc: 50 Ry`, `ecutrho: 400 Ry`, `kpts: [2,2,2]`,
+`conv_thr: 1e-9`. Total cost factor ~12× per QE run (~3 hours on 8
+MPI ranks for a `GST_rocksalt` vc-relax).
+
+Also added `conv_thr` to `QEBackend.settings_fingerprint` —
+previously it wasn't, which meant tightening the SCF threshold
+silently hit cached looser results. Cache invalidates correctly now
+on any of the four bumped knobs. Functionals (PBE bulk / B3LYP
+cluster) and cluster basis (def2-svp) unchanged — they're either
+already correct or out of scope for the current bulk-fit blocker.
+
+`studies/gst_drift/EXPERIMENT.md` §4.1 updated with the new settings
+list, §10 has a new entry with the full accuracy-vs-cost table.
+Tests: 174 + 1 new (settings_fingerprint changes with conv_thr).
+
 ### 2026-05-09 — `qm_relax_cell` (variable-cell QE relax)
 
 Diagnosing the GST CMA plateau (cost stuck at ~1.5×10⁶ after 1000

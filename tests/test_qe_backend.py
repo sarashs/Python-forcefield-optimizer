@@ -295,6 +295,29 @@ def test_per_structure_functional_override(qm_cfg):
     assert backend._effective_functional(s_default) == qm_cfg.functional
 
 
+def test_settings_fingerprint_changes_with_conv_thr(pseudo_dir):
+    """conv_thr affects forces/stress at converged SCF — bumping
+    1e-7 → 1e-9 must invalidate cached relaxes (otherwise tightening
+    the threshold silently hits stale, looser results)."""
+    from pyfield.qm.qe_backend import QEBackend
+
+    base = QmCfg.model_validate({
+        "code": "qe", "functional": "pbe", "basis": "pw",
+        "pseudo_dir": str(pseudo_dir),
+        "pseudopotentials": {"Si": "x.UPF"},
+        "conv_thr": 1.0e-7,
+    })
+    other = QmCfg.model_validate({
+        "code": "qe", "functional": "pbe", "basis": "pw",
+        "pseudo_dir": str(pseudo_dir),
+        "pseudopotentials": {"Si": "x.UPF"},
+        "conv_thr": 1.0e-9,
+    })
+    fp1 = QEBackend(base).settings_fingerprint()
+    fp2 = QEBackend(other).settings_fingerprint()
+    assert fp1 != fp2
+
+
 def test_settings_fingerprint_changes_with_ecut(pseudo_dir):
     from pyfield.qm.qe_backend import QEBackend
 

@@ -27,12 +27,21 @@ qm:
     Ge: ge_pbe_v1.4.uspp.F.UPF
     Sb: sb_pbe_v1.4.uspp.F.UPF
     Te: Te_pbe_v1.uspp.F.UPF
-  ecutwfc: 40      # Ry — orbital cutoff (50 for production; 40 is the demo trade-off)
-  ecutrho: 320     # Ry — density cutoff (= 8×ecutwfc; SSSP recommended ratio)
-  kpts: [1, 1, 1]  # Γ-only: fast for the demo. Bump to [2,2,2] or [3,3,3] for
-                   # production elastic-constant fits (k-point convergence ~10 meV).
-                   # Without MPI, even Γ-only takes ~15 min per BFGS step on 18 atoms;
-                   # set ESPRESSO_COMMAND='mpirun -np 8 pw.x ...' for ~5× speedup.
+  ecutwfc: 50      # Ry — orbital cutoff (production setting; was 40 demo-grade
+                   # which left ~1–10 kbar Pulay-stress floor under the 0.5 kbar
+                   # press_conv_thr we ask vc-relax to satisfy).
+  ecutrho: 400     # Ry — density cutoff (= 8×ecutwfc; SSSP recommended ratio)
+  conv_thr: 1.0e-9 # SCF tolerance: 1e-7 was fine for energies, loose for the
+                   # stress tensor that drives vc-relax. 1e-9 brings the stress
+                   # noise down to ~0.1 kbar (well below press_conv_thr) at ~1.1×
+                   # SCF cost. See EXPERIMENT.md §4.1 / §10 (2026-05-09).
+  kpts: [2, 2, 2]  # 8 k-points on the 18-atom cubic cell. Γ-only on a small-gap
+                   # / metallic-character chalcogenide gives ~5–15 % errors in the
+                   # stress tensor and ~10–25 % in elastic constants — directly
+                   # the targets the strain scans hit. [2,2,2] cuts those ~3–5×
+                   # at ~8× SCF cost. Set ESPRESSO_COMMAND='mpirun -np 8 pw.x ...'
+                   # before kernel-start for the ~5× MPI speedup that makes this
+                   # tractable on a workstation.
 
 structures:
   # ─────────────────────────── BULK (PBC, QE) ─────────────────────────

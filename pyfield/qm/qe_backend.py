@@ -481,4 +481,9 @@ class QEBackend(QmBackend):
             "spin": self.spin,
             "charge": self.charge,
             "degauss": self.degauss,
+            # SCF tolerance affects the converged result (forces /
+            # stress, in particular) — different conv_thr → different
+            # cache entry. mixing_beta is omitted because it only
+            # changes the convergence path, not the converged values.
+            "conv_thr": self.conv_thr,
         }, sort_keys=True)
