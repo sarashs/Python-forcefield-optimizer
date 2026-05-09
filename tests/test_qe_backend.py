@@ -155,6 +155,14 @@ def test_input_data_vc_relax_keywords(qm_cfg):
     assert d["ions"]["ion_dynamics"] == "bfgs"
     assert d["cell"]["cell_dynamics"] == "bfgs"
     assert "press_conv_thr" in d["cell"]
+    # cell_dofree must keep the relaxed cell orthorhombic — the
+    # StructureCfg.box schema only carries [a, b, c] and would lose
+    # any shear from a `cell_dofree: 'all'` run.
+    assert d["cell"]["cell_dofree"] == "xyz"
+    # nstep generously over QE's 50-default so a vc-relax that needs
+    # 6%+ volume change doesn't hit the cap and exit non-zero with a
+    # half-converged geometry.
+    assert d["control"]["nstep"] >= 100
 
 
 def test_input_data_default_is_scf(qm_cfg):

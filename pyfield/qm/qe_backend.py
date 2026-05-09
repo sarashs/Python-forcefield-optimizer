@@ -182,11 +182,24 @@ class QEBackend(QmBackend):
         if relax_cell:
             data["control"]["forc_conv_thr"] = 1.0e-3   # Ry/bohr (~0.025 eV/Å)
             data["control"]["etot_conv_thr"] = 1.0e-4   # Ry
+            # QE's default nstep for vc-relax is 50 — too tight for an
+            # underbound seed cell that needs 6%+ volume change. Bump
+            # to 200 so the relax can finish cleanly inside the limit.
+            data["control"]["nstep"] = 200
             data["ions"] = {"ion_dynamics": "bfgs"}
             data["cell"] = {
                 "cell_dynamics": "bfgs",
                 "press_conv_thr": 0.5,                  # kbar
-                "cell_dofree": "all",
+                # 'xyz' = independent a, b, c, no shear → orthorhombic
+                # relaxed cell, which is what our `box: [a, b, c]`
+                # schema can carry. 'all' (full 9 DOFs) would let
+                # vc-relax break symmetry into a sheared cell whenever
+                # the structure has no enforced point group; we'd then
+                # raise in `_relax_vc` because the schema would lose
+                # the off-diagonal terms. 'xyz' also has fewer DOFs to
+                # optimize (3 cell vs 9), so the relax converges in
+                # fewer ionic steps.
+                "cell_dofree": "xyz",
                 # cell_factor lives in &CELL (not &SYSTEM — older QE
                 # docs are inconsistent about this and 6.4.x rejects
                 # it from &SYSTEM with "bad line in namelist &system").
@@ -380,14 +393,43 @@ class QEBackend(QmBackend):
             try:
                 e_ev = float(atoms.get_potential_energy())   # triggers pw.x; QE drives BFGS internally
             except subprocess.CalledProcessError as e:
-                tail = self._read_qe_tail(workdir, n=80)
-                keep = Path(tempfile.gettempdir()) / f"qe_vcrelax_failed_{workdir.name}"
-                shutil.move(str(workdir), str(keep))
-                workdir = None  # so the finally-clause doesn't try to delete it
-                raise RuntimeError(
-                    f"QE vc-relax failed (exit {e.returncode}). "
-                    f"Inputs/outputs preserved at: {keep}\n{tail}"
-                ) from e
+                # QE returns non-zero even when it wrote a valid final
+                # image. Common case: STOP 3 = hit `nstep` without
+                # satisfying both `forc_conv_thr` and `press_conv_thr`,
+                # but the last step's geometry + energy + forces are
+                # still in espresso.pwo and "JOB DONE" appears at the
+                # bottom. Don't throw away an hour-plus of compute over
+                # a soft-fail like that — read the last image, warn,
+                # and proceed.
+                pwo = workdir / "espresso.pwo"
+                pwo_text = pwo.read_text(errors="replace") if pwo.exists() else ""
+                if "JOB DONE" in pwo_text:
+                    import warnings
+                    warnings.warn(
+                        f"QE vc-relax exited {e.returncode} but completed "
+                        "with JOB DONE — likely hit `nstep` without fully "
+                        "converging both forc_conv_thr and press_conv_thr. "
+                        "Using the last step's geometry; if you need a "
+                        "tighter relax, rerun with a larger nstep or "
+                        "loosen the thresholds.",
+                        RuntimeWarning,
+                    )
+                    e_ev = float(atoms.calc.results.get("energy", 0.0)) \
+                        if atoms.calc.results.get("energy") is not None else None
+                    if e_ev is None:
+                        # ASE didn't parse the energy off the failed run.
+                        # Pull it from the final image we'll read below.
+                        final_tmp = ase_read(str(pwo), index=-1)
+                        e_ev = float(final_tmp.get_potential_energy())
+                else:
+                    tail = self._read_qe_tail(workdir, n=80)
+                    keep = Path(tempfile.gettempdir()) / f"qe_vcrelax_failed_{workdir.name}"
+                    shutil.move(str(workdir), str(keep))
+                    workdir = None
+                    raise RuntimeError(
+                        f"QE vc-relax failed (exit {e.returncode}). "
+                        f"Inputs/outputs preserved at: {keep}\n{tail}"
+                    ) from e
             out = workdir / "espresso.pwo"
             final = ase_read(str(out), index=-1)
         finally:

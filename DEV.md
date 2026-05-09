@@ -1051,16 +1051,35 @@ training targets, not a parameter shortage:
   `cell_factor: 2.0` (pre-allocate the basis as if the cell were 2×
   its starting volume). We pass `&IONS{ion_dynamics: bfgs}` and
   `&CELL{cell_dynamics: bfgs, press_conv_thr: 0.5, cell_factor: 2.0,
-  cell_dofree: all}` in `_build_input_data(..., relax_cell=True)`.
-  (`cell_factor` lives in `&CELL`, not `&SYSTEM` — QE 6.4.x rejects
-  it from `&SYSTEM` with "bad line in namelist". Older docs are
-  inconsistent; verified against QE 6.4.1 in this run.) After QE returns, ASE's
-  Espresso calculator doesn't auto-update the atoms object's positions
-  on a vc-relax, so `_relax_vc` reads the last image of `espresso.pwo`
-  via `ase.io.read(..., index=-1)` and copies cell + positions onto a
-  new `StructureCfg`. Schema-level guardrail: a non-orthorhombic relax
-  result raises (the `box: [a, b, c]` schema doesn't carry off-diagonal
-  cell terms; constrain `cell_dofree` if symmetry breaking is needed).
+  cell_dofree: xyz}` plus `&CONTROL{nstep: 200}` in
+  `_build_input_data(..., relax_cell=True)`. Three QE-specific
+  gotchas surfaced on a real GST run (1h56m wall, QE 6.4.1) and are
+  baked into the input now:
+  - `cell_factor` lives in `&CELL`, not `&SYSTEM` — QE 6.4.x rejects
+    it from `&SYSTEM` with "bad line in namelist". Older docs are
+    inconsistent; verified against QE 6.4.1.
+  - `cell_dofree: 'xyz'` (independent `a, b, c`; no shear) instead
+    of `'all'` (full 9 DOFs). With `'all'` and a low-symmetry input
+    like the disordered Ge/Sb cation sublattice, vc-relax settles
+    into a sheared cell which our `box: [a, b, c]` schema can't
+    carry — the non-orthorhombic guard would raise. `'xyz'` is also
+    what the strain scans assume (they're diagonal-only) and has
+    fewer cell DOFs to optimize, so the relax converges in fewer
+    ionic steps.
+  - `nstep: 200` (default 50) so a relax that needs 6%+ volume
+    change doesn't hit the cap mid-trajectory. The first GST run
+    stopped at the 50-step default with `STOP 3` and exit code 3,
+    even though it had written a valid final image and `JOB DONE`.
+  After QE returns, ASE's Espresso calculator doesn't auto-update
+  the atoms object's positions on a vc-relax, so `_relax_vc` reads
+  the last image of `espresso.pwo` via `ase.io.read(..., index=-1)`
+  and copies cell + positions onto a new `StructureCfg`.
+  Schema-level guardrail: a non-orthorhombic relax result raises
+  (the `box: [a, b, c]` schema doesn't carry off-diagonal terms).
+  We also tolerate exit codes >0 when the output contains "JOB DONE"
+  — that's the soft-fail case above; we read the last step's
+  geometry with a `RuntimeWarning` rather than throwing away the
+  hour-plus of compute.
 - **Cache key.** `pyfield/qm/prep.py:_relax_op` distinguishes
   `relax_constrained` / `vc-relax` / `relax`, so flipping
   `qm_relax_cell` on doesn't accidentally hit a stale atoms-only
