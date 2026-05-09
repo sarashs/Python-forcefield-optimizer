@@ -250,3 +250,64 @@ def test_isotropic_scale_rejects_nonpositive():
     for bad in (0.0, -1.0):
         with pytest.raises(ValueError, match="must be > 0"):
             T.isotropic_scale(s, bad)
+
+
+# ---------------------------------------------------------------------------
+# strain
+# ---------------------------------------------------------------------------
+
+def test_strain_hydrostatic_matches_isotropic_scale():
+    s = _struct([[1, 0, 0], [0, 1, 0], [0, 0, 1]], box=(10, 10, 10))
+    s_strain = T.strain(s, 0.05, mode="hydrostatic")
+    s_iso = T.isotropic_scale(s, 1.05)
+    c1 = _coords(s_strain); c2 = _coords(s_iso)
+    assert np.allclose(c1, c2)
+    assert s_strain.box == s_iso.box
+
+
+def test_strain_uniaxial_only_changes_one_axis():
+    s = _struct([[1, 1, 1]], box=(10, 10, 10))
+    s2 = T.strain(s, 0.10, mode="uniaxial", axis="z")
+    c = _coords(s2)
+    assert np.isclose(c[0, 0], 1.0)        # x untouched
+    assert np.isclose(c[0, 1], 1.0)        # y untouched
+    assert np.isclose(c[0, 2], 1.10)       # z stretched 10%
+    assert s2.box == (10.0, 10.0, 11.0)
+
+
+def test_strain_biaxial_changes_two_axes():
+    s = _struct([[1, 1, 1]], box=(10, 10, 10))
+    s2 = T.strain(s, 0.10, mode="biaxial", axis="xy")
+    c = _coords(s2)
+    assert np.isclose(c[0, 0], 1.10)       # x stretched
+    assert np.isclose(c[0, 1], 1.10)       # y stretched
+    assert np.isclose(c[0, 2], 1.0)        # z untouched
+    assert np.isclose(s2.box[2], 10.0)
+
+
+def test_strain_shear_xy_tilts_in_plane():
+    s = _struct([[1, 0, 0], [0, 1, 0]], box=(10, 10, 10))
+    s2 = T.strain(s, 0.05, mode="shear", axis="xy")
+    c = _coords(s2)
+    # F[0,1] = F[1,0] = 0.05; coords transform as new = F·old.
+    # atom 1 = (1, 0, 0) → (1, 0.05, 0); atom 2 = (0, 1, 0) → (0.05, 1, 0).
+    assert np.allclose(c[0], [1.0, 0.05, 0])
+    assert np.allclose(c[1], [0.05, 1.0, 0])
+
+
+def test_strain_invalid_mode_rejected():
+    s = _struct([[0, 0, 0]])
+    with pytest.raises(ValueError, match="mode must be"):
+        T.strain(s, 0.05, mode="weirdmode")
+
+
+def test_strain_uniaxial_requires_axis():
+    s = _struct([[0, 0, 0]])
+    with pytest.raises(ValueError, match="axis must be one of"):
+        T.strain(s, 0.05, mode="uniaxial")
+
+
+def test_strain_shear_requires_two_letter_plane():
+    s = _struct([[0, 0, 0]])
+    with pytest.raises(ValueError, match="2-letter plane"):
+        T.strain(s, 0.05, mode="shear", axis="x")

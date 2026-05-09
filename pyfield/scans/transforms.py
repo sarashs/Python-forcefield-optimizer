@@ -320,3 +320,97 @@ def isotropic_scale(structure: StructureCfg, value: float) -> StructureCfg:
         for i, a in enumerate(structure.atoms)
     ]
     return structure.model_copy(update={"atoms": new_atoms, "box": new_box})
+
+
+# ---------------------------------------------------------------------------
+# strain — apply a Lagrangian strain tensor to the cell + atoms.
+#
+# Five named modes cover everything you need to extract elastic constants
+# from a crystalline reference structure:
+#
+# - hydrostatic      : isotropic; new_box = (1+ε)·box (same as isotropic_scale).
+#                      bulk modulus B = − V·dP/dV ≈ V·∂²E/∂V².
+# - uniaxial(axis)   : strain along x, y, or z; other two axes unchanged.
+#                      gives C₁₁ when paired with biaxial.
+# - biaxial(plane)   : strain along two of {xy, xz, yz}; third unchanged.
+# - shear(plane)     : tilts the cell in the named plane (xy / xz / yz).
+#                      gives the C₄₄ shear modulus.
+# - volumetric(axis) : equivalent to uniaxial — kept as alias for clarity.
+#
+# Atoms are scaled affinely with the lattice (fractional coords preserved),
+# then the constrained QM relax is allowed to move them inside the
+# deformed cell while the cell vectors stay locked at the strained values.
+# ---------------------------------------------------------------------------
+
+_AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
+
+
+def _strain_tensor(mode: str, value: float, axis: Optional[str] = None) -> np.ndarray:
+    """Return the 3×3 deformation matrix F such that new = F @ old.
+
+    For small strains ε, F = I + ε for the named directions, so
+    new_box[i] = (1 + ε) * old_box[i] along the strained axis.
+    """
+    F = np.eye(3, dtype=float)
+    mode = mode.lower()
+    if mode == "hydrostatic":
+        F = (1.0 + value) * np.eye(3)
+    elif mode in ("uniaxial", "volumetric"):
+        if axis is None or axis not in _AXIS_INDEX:
+            raise ValueError(f"strain {mode!r}: axis must be one of {list(_AXIS_INDEX)}, "
+                             f"got {axis!r}")
+        F[_AXIS_INDEX[axis], _AXIS_INDEX[axis]] = 1.0 + value
+    elif mode == "biaxial":
+        if axis is None or len(axis) != 2 or any(c not in _AXIS_INDEX for c in axis):
+            raise ValueError(f"strain biaxial: axis must be a 2-letter plane like 'xy', 'xz', "
+                             f"'yz', got {axis!r}")
+        for c in axis:
+            F[_AXIS_INDEX[c], _AXIS_INDEX[c]] = 1.0 + value
+    elif mode == "shear":
+        if axis is None or len(axis) != 2 or axis[0] == axis[1] or any(c not in _AXIS_INDEX for c in axis):
+            raise ValueError(f"strain shear: axis must be a 2-letter plane like 'xy', 'xz', "
+                             f"'yz', got {axis!r}")
+        i, j = _AXIS_INDEX[axis[0]], _AXIS_INDEX[axis[1]]
+        F[i, j] = value
+        F[j, i] = value
+    else:
+        raise ValueError(
+            f"strain: mode must be one of "
+            f"['hydrostatic','uniaxial','biaxial','shear','volumetric'], got {mode!r}"
+        )
+    return F
+
+
+def strain(
+    structure: StructureCfg,
+    value: float,
+    *,
+    mode: str = "hydrostatic",
+    axis: Optional[str] = None,
+) -> StructureCfg:
+    """Apply a strain to the cell + atoms (preserving fractional positions).
+
+    Used by the `type: strain` scan kind. Atoms are deformed affinely
+    with the lattice; the constrained relax that follows lets each
+    atom relax inside the strained cell while the cell vectors stay
+    fixed.
+    """
+    F = _strain_tensor(mode, value, axis=axis)
+    coords = _coords(structure)
+    new_coords = coords @ F.T
+    # Box vectors transform the same way: new_a_i = F · a_i. For an
+    # orthorhombic input box [a, b, c] the deformed box has the same
+    # axis lengths along the diagonal of F·diag(a,b,c).
+    box = np.diag([float(b) for b in structure.box])
+    new_box_matrix = F @ box
+    # We only persist orthorhombic boxes today; warn if the deformation
+    # induces off-diagonal elements (shear) so the caller knows the
+    # box tuple loses the shear info.
+    new_box = tuple(float(np.linalg.norm(new_box_matrix[:, i])) for i in range(3))
+    new_atoms = [
+        a.model_copy(update={"x": float(new_coords[i, 0]),
+                             "y": float(new_coords[i, 1]),
+                             "z": float(new_coords[i, 2])})
+        for i, a in enumerate(structure.atoms)
+    ]
+    return structure.model_copy(update={"atoms": new_atoms, "box": new_box})

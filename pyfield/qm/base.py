@@ -70,17 +70,34 @@ class QmBackend:
         raise NotImplementedError
 
 
-def make_backend(qm_cfg) -> QmBackend:
+def make_backend(qm_cfg, *, code_override: Optional[str] = None) -> QmBackend:
     """Instantiate the right QmBackend for the configured `qm.code`.
+
+    `code_override` lets per-structure `qm_code:` fields pick a different
+    backend than the global `qm.code`. Standard pattern: PySCF for
+    cluster references + QE for PBC supercells in the same training
+    set (PySCF's PBC gradients aren't reliable for large cells; QE's
+    are).
 
     Free / open-source backends only. Commercial codes (Gaussian, VASP,
     Molpro) are intentionally absent — DEV.md §11.3 has the rationale.
     """
-    if qm_cfg.code == "pyscf":
+    code = code_override or qm_cfg.code
+    if code == "pyscf":
         from pyfield.qm.pyscf_backend import PySCFBackend
         return PySCFBackend(qm_cfg)
+    if code == "qe":
+        from pyfield.qm.qe_backend import QEBackend
+        return QEBackend(qm_cfg)
     raise NotImplementedError(
-        f"qm.code={qm_cfg.code!r} reserved but not yet wired. Today the only "
-        "implemented backend is `pyscf`. xtb / qe / gpaw etc. are one new "
-        "file under pyfield/qm/ each — see DEV.md §11.13."
+        f"qm.code={code!r} reserved but not yet wired. Today the implemented "
+        "backends are `pyscf` (cluster + small PBC) and `qe` (Quantum "
+        "ESPRESSO for production PBC). xtb / gpaw / orca slot in behind "
+        "the same QmBackend interface — see DEV.md §11.13."
     )
+
+
+def structure_code(structure: StructureCfg, fallback: str) -> str:
+    """Resolve the QM code for a structure, honoring per-structure override."""
+    extras = getattr(structure, "__pydantic_extra__", {}) or {}
+    return extras.get("qm_code", fallback)

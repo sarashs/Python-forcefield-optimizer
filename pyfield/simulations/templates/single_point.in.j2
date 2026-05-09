@@ -8,7 +8,10 @@ atom_style charge
 atom_modify map hash
 read_data {{ DATA_FILE }}
 
-pair_style reaxff NULL
+# `safezone 3.0 mincap 200`: see comment in minimize.in.j2 — same
+# strain-compressed-cell bond-overflow protection applies to single
+# points (`run 0` still builds the ReaxFF bond list).
+pair_style reaxff NULL safezone 3.0 mincap 200
 pair_coeff * * {{ FFIELD_PATH }}{% for el in ELEMENTS %} {{ el }}{% endfor %}
 fix qeq all qeq/reaxff 1 0.0 10.0 1.0e-6 reaxff
 neighbor        2.0 bin

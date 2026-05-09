@@ -97,11 +97,11 @@ def test_populator_journal_reports_actions(tmp_path):
                            sp_table={1.05: 0.0, 2.07: 0.0})
     _, journal = populate_qm(cfg, backend=backend)
     actions = [a for a, _, _ in journal]
-    assert "relax Cl2_Opt" in actions
+    assert any(a.startswith("relax Cl2_Opt") for a in actions)
     # Cl2_Opt was just relaxed, so its energy is reused (no redundant SP).
     assert "reuse_relax_energy Cl2_Opt_min" in actions
     # Cl2_414 wasn't relaxed; it gets a single_point.
-    assert "single_point Cl2_414_min" in actions
+    assert any(a.startswith("single_point Cl2_414_min") for a in actions)
 
 
 def test_populator_idempotent_via_cache(tmp_path):

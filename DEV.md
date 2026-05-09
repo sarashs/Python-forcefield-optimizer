@@ -78,6 +78,105 @@ and a small change only re-runs what depends on it.
 | `pyfield.viz`           | `animate_xyz_dir` — pure-matplotlib in-notebook scan animation. |
 | `pyfield.diagnostics`   | `cost_breakdown(cfg, ffield_path?)` — runs every required sim once and reports per-sim energies + per-target residuals. Used by the notebook to compare initial vs post-SA FF. |
 
+#### Subpackage call graph
+
+Solid arrows are runtime imports / function calls; dashed arrows are
+schema-only dependencies (everyone reads `pyfield.config` types).
+
+```mermaid
+flowchart LR
+    cli["pyfield.cli<br/>(argparse entry)"] --> runner["pyfield.runner<br/>(orchestrators)"]
+    runner --> qm["pyfield.qm<br/>QmBackend + cache + prep"]
+    runner --> scans["pyfield.scans<br/>geometric perturbations"]
+    runner --> opt["pyfield.optimizers<br/>sa / ga / sa+ga / cma"]
+    runner --> diag["pyfield.diagnostics<br/>cost_breakdown"]
+
+    opt --> obj["pyfield.objectives<br/>plug-in cost pieces"]
+    opt --> sim["pyfield.simulations<br/>Jinja MD templates"]
+    opt --> ff["pyfield.forcefield<br/>REAX_FF parser/writer"]
+
+    obj --> sim
+    obj --> io
+    sim --> io["pyfield.io<br/>LammpsRunner + read_dump"]
+    diag --> obj
+    diag --> sim
+
+    qm -.-> config["pyfield.config<br/>schema + YAML loader"]
+    scans -.-> config
+    opt -.-> config
+    sim -.-> config
+    obj -.-> config
+
+    viz["pyfield.viz<br/>animate_xyz_dir"]
+```
+
+#### QM-prep dispatch flow
+
+How `populate_qm` routes a structure to the right backend. The
+critical detail is the **per-structure** dispatch via
+`structure_code(struct, fallback)` — clusters and PBC bulk can
+coexist in the same run.
+
+```mermaid
+flowchart TD
+    yaml["populated.yaml<br/>(structures + qm:)"] --> popqm["populate_qm"]
+    popqm --> loop{"for each<br/>structure"}
+    loop --> code["structure_code(struct)<br/>reads qm_code extra<br/>(fallback: global qm.code)"]
+    code --> bc["_BackendCache.for_structure<br/>lazy build PySCF or QE"]
+    bc --> keyc["_key = sha256<br/>atoms + box + pbc<br/>+ qm_code/functional/basis<br/>+ backend fingerprint + op"]
+    keyc --> hit{"cache.has(key)?"}
+    hit -->|yes| loadc["load result.json"]
+    loadc --> merge["_merge_relax_with_input<br/>re-attach pbc / qm_code /<br/>functional / basis / constraint<br/>onto cached structure"]
+    merge --> ret["return result"]
+    hit -->|no| run["backend.single_point<br/>or backend.relax"]
+    run --> store["store result.json<br/>+ structure.json<br/>(full StructureCfg dump)"]
+    store --> ret
+    ret --> loop
+```
+
+The merge step is what made the 2026-05-04 cache fix work: legacy
+entries didn't store `pbc / qm_code / qm_functional`, so cache hits
+silently routed PBC structures through PySCF. `_merge_relax_with_input`
+re-attaches the dispatch metadata from the *input* structure on every
+hit, regardless of cache vintage.
+
+#### CMA-ES parallel evaluation loop
+
+The optimizer hot path. `cma.ask() → batch eval over a worker pool →
+cma.tell()` — repeated `generations` times. The 39-LAMMPS-sims-per-eval
+is what dominates wall-clock; QE doesn't run here (it's all cached).
+
+```mermaid
+sequenceDiagram
+    participant M as Master (CMA-ES)
+    participant P as ProcessPool (8 workers)
+    participant W as Worker
+    participant L as LAMMPS (per worker)
+
+    loop generation × N (e.g. 2000)
+        M->>M: cma.ask() → ~13 candidate vectors
+        M->>P: submit batch
+        loop per candidate (parallel × 8)
+            P->>W: candidate vector
+            W->>W: write ffield.reax (scratch)
+            loop per simulation (×39)
+                W->>L: clear + render input.in
+                L-->>W: energy + charges + dump
+            end
+            W->>W: aggregate per-target costs
+            W-->>P: scalar cost
+        end
+        P-->>M: ~13 costs
+        M->>M: cma.tell(costs)
+        M->>M: update mean + covariance
+    end
+```
+
+Each worker holds its own long-lived `LammpsRunner` and per-worker
+scratch directory (so `*.data / *.in / *.lammpstrj` writes don't
+collide). With `optimizer.seed` set the run is bit-identical regardless
+of `processors` — every random number is drawn on the master.
+
 ## 2. Setup and installation
 
 The hard part of setting up PyField is **LAMMPS with the Python module +
@@ -159,7 +258,7 @@ What it does:
    objective (here only `energy_combination`) and Metropolis-accepts.
 4. Writes `bestFF.reax` and prints `FINAL cost:`.
 
-Expected output ends with `FINAL cost: 32907.21505210572` (deterministic
+Expected output ends with `FINAL cost: 32907.21744068185` (deterministic
 because `seed: 0` is set in the YAML). Total wall time is under a second.
 
 Or run the test suite, which exercises the same path plus parser
@@ -191,6 +290,74 @@ needed by the unfinished `NNOpt.py` and is *not* in the default install;
 add the `[nn]` extra (`pip install -e .[nn]`) only if you are actively
 working on `NNOpt`. The legacy top-level `requirements.txt` was removed
 in Phase 2.
+
+### QM backend setup (optional)
+
+PySCF (`pip install -e .[qm]`) is the default backend and needs no
+extra setup — it ships its own integrals + xc functionals. The other
+backends drop in behind the same `QmBackend` interface; today only
+**Quantum ESPRESSO** is wired through. Setup mirrors the user-facing
+README §"Setting up Quantum ESPRESSO" but is repeated here so a
+developer modifying `pyfield/qm/qe_backend.py` doesn't have to chase
+it down.
+
+**1. Install QE (provides `pw.x`).**
+
+```bash
+sudo apt install quantum-espresso        # Ubuntu / Debian
+# or: conda install -c conda-forge qe
+# or: build from source (https://www.quantum-espresso.org/)
+```
+
+**2. Tell ASE how to invoke it.** ASE's `Espresso` calculator reads
+`ESPRESSO_COMMAND` from the environment at *kernel-start time*. There
+is no notebook-runtime workaround — `os.environ['…'] = …` after the
+kernel is already up only affects child processes you spawn from that
+point on, but ASE's `EspressoProfile` snapshots the value during
+construction.
+
+```bash
+# In the shell that launches python / jupyter:
+export ESPRESSO_COMMAND="mpirun -np 8 pw.x -in PREFIX.pwi > PREFIX.pwo"
+jupyter lab    # or python …
+```
+
+Pick `-np` to match physical cores (not hyperthreads). On 8 cores the
+typical speedup is 5–7× over single-core. Without this env var, ASE
+falls back to plain `pw.x` (single-core) — runs still complete on
+small cells but compound badly across a scan.
+
+To verify what the running kernel sees:
+
+```python
+import os; print(os.environ.get('ESPRESSO_COMMAND'))
+```
+
+`None` means single-core. Restart the kernel after exporting.
+
+**3. Pseudopotentials.** SSSP 1.1.2 PBE Efficiency is the
+recommended set — well-tested across thousands of compounds.
+
+```bash
+mkdir -p ~/qe_pseudos && cd ~/qe_pseudos
+curl -fsSL -o SSSP.tar.gz \
+  "https://archive.materialscloud.org/api/records/rcyfm-68h65/files/SSSP_1.1.2_PBE_efficiency.tar.gz/content"
+tar xzf SSSP.tar.gz && rm SSSP.tar.gz
+export ESPRESSO_PSEUDO=~/qe_pseudos
+```
+
+PyField reads `ESPRESSO_PSEUDO` (or the YAML `qm.pseudo_dir` key)
+when constructing the `EspressoProfile`. Per-element UPF filenames
+go in the YAML's `qm.pseudopotentials` map; changing a UPF
+invalidates the cache (the filename is folded into
+`settings_fingerprint`).
+
+**4. Re-running cached QM after env-var changes.** The QM cache
+(`pyfield/qm/cache.py`) keys on the *settings* fingerprint, not the
+runtime command. So flipping `ESPRESSO_COMMAND` from single-core to
+mpirun does **not** invalidate cached results — same input → same
+energy regardless of wall-clock. Wipe `~/.cache/pyfield/qm/<hash>/`
+manually only if you suspect a numerical regression.
 
 ### Known platform gotchas
 
@@ -842,6 +1009,192 @@ Acceptance:
 ## 9. Change log
 
 Reverse-chronological track record of what's actually shipped.
+
+### 2026-05-08 — `cg`-minimize hang fix + per-side `ff_relax_method` override
+
+A long debug session on the GST drift study surfaced two related
+robustness bugs and one schema gap. Bundled together because they all
+landed as part of unblocking the same wedged training run.
+
+- **`cg` minimize deadlocks LAMMPS setup on PBC ReaxFF cells with
+  unfit seed FFs.** `cost_breakdown` and the SA/CMA driver hung
+  inside `lmp.file()` → `Min::setup()` for 24+ h on the unstrained
+  GST_rocksalt cell — pre-iteration force eval never returned, so
+  neither LAMMPS' iter caps nor `timer timeout` fired (both only
+  check inside the iteration loop). Verified via `py-spy dump` and a
+  subprocess-isolated min_style sweep: `cg → hangs`, `sd → hangs`,
+  **`hftn → 0.26 s`**, `fire → 4.59 s`. Switched the project default
+  in `pyfield/simulations/minimize.py:53` from `cg` to `hftn`. Cl₂
+  smoke unchanged on this alone.
+- **Even with `hftn`, an unfit seed FF NaN's atoms on iteration 1.**
+  The next symptom was every PBC scan-point sim returning the same
+  `E = -53.060 kcal/mol` — dump files showed `nan` for every coord,
+  and LAMMPS silently reported the last-finite energy. Independently,
+  the Ge₂_d_4 long-bond stretch produced `-1.2 × 10¹²` kcal/mol
+  (Ge–Ge bond parameters have unphysical attraction at long
+  separation in the seed). Two template hardenings: added
+  `min_modify dmax 0.05` (cap per-step atom motion at 50 mÅ) and
+  `timer timeout 0:05:00 every 100` (5 min wall-clock cap). Tightened
+  iter caps `2e5 / 2e6 → 2000 / 20000`. Cl₂ smoke `final_cost`
+  drifted from `32907.21505210572` to `32907.21744068185` (0.002
+  kcal/mol — same converged geometry, slightly different per-step
+  kinematics under dmax). Updated test snapshot, README, DEV.
+- **New schema field `ScanCfg.ff_relax_method`.** The dmax cap
+  *didn't* save the GST PBC cells — they still NaN'd on iter 1 with
+  the unfit seed. The right answer for early-fit CMA against an FF
+  that can't yet minimize is "evaluate FF as a single-point at the
+  QM-relaxed geometry and let CMA close the energy gap". So added
+  `ff_relax_method: Optional[RelaxMethod] = None` to `ScanCfg`
+  (`pyfield/config/schema.py:234`) — when set, overrides
+  `relax_method` on the FF side only; QM still does its own
+  `relax_method` (so the cached QM-relaxed geom is unchanged). The
+  scan engine (`pyfield/scans/__init__.py:248`) reads
+  `scan.ff_relax_method or scan.relax_method`. The QM dispatch path
+  ignores the field entirely. GST drift YAML now has
+  `ff_relax_method: rigid` on every scan; once the FF is fit enough
+  to minimize the cells without exploding, drop the override. Robust
+  against `qm-prep` re-runs (lives in source YAML, not as a one-shot
+  patch on the populated artifact).
+- **Diagnostics observability.** `pyfield.diagnostics.cost_breakdown`
+  was previously silent across its 39-sim sweep; rewrote it to use
+  `tqdm.auto` + per-sim "starting / done" log lines (with timing) +
+  `sys.stdout.flush()` after each sim so Jupyter shows progress in
+  real time. Slow-threshold (`>10 s`) sims get a `[slow]` marker.
+- **EXPERIMENT.md §10** has the full diagnosis chain dated
+  2026-05-08, including the seed-FF inspection (which atoms / bonds
+  / angles are placeholder-fitted), the test-case sweep that
+  isolated the LAMMPS bug, and the rationale for not hand-fitting
+  the FF parameters.
+- **Tests**: 170 still pass. New schema field is `Optional` with
+  default `None`, so existing YAMLs are unchanged; existing tests
+  exercise the `None` path automatically.
+
+### 2026-05-03 — Quantum ESPRESSO backend (`qm.code: qe`)
+
+Adds a second QM backend so production PBC training has a working
+gradient path. PySCF's PBC nuclear gradients stall through
+`geometric_solver` for moderately sized supercells; QE's plane-wave
+SCF + analytic forces handle them cleanly.
+
+- **`pyfield/qm/qe_backend.py`** (new, ~200 LOC):
+  - Drives QE through ASE's `Espresso` calculator (`ase >= 3.23`
+    `EspressoProfile` API). Builds the `input_data` dict (control /
+    system / electrons), runs `pw.x` via subprocess, parses output.
+  - `single_point` and `relax` mirror the PySCF backend's interface;
+    `relax` uses ASE's `BFGS` optimiser internally.
+  - **Constraint translation** to ASE: `distance` →
+    `FixBondLengths` (with pre-positioning to the target
+    separation); `angle` / `dihedral` → `FixInternals(angles_deg=...)`
+    / `FixInternals(dihedrals_deg=...)`.
+  - Energy / force unit conversion: ASE eV → kcal/mol via
+    `_EV_TO_KCAL = 23.06054783`.
+  - Settings fingerprint covers `functional, ecutwfc, ecutrho, kpts,
+    spin, charge, degauss` so cache keys differ when any of those
+    change.
+- **Per-structure backend dispatch** (`pyfield/qm/base.py`,
+  `pyfield/qm/prep.py`):
+  - `make_backend(qm_cfg, code_override=)` accepts an optional
+    per-call code override.
+  - `structure_code(structure, fallback)` reads the `qm_code` extra
+    from `__pydantic_extra__`, defaulting to the global.
+  - New `_BackendCache` in `prep.py` lazily builds one backend
+    instance per code seen across the structures, so a config can
+    mix PySCF clusters + QE PBC in the same run with no double-init.
+  - `relax_structures` and `populate_qm` now dispatch per-structure
+    via `_BackendCache.for_structure(...)`. Cache fingerprint is
+    looked up from the *backend that ran*, so two different-backend
+    calls on the same structure get distinct cache entries.
+  - Journal action strings now end with `[backend.name]` for
+    transparency in the CLI output.
+- **Cache** (`pyfield/qm/cache.py`):
+  - `_canonical_atoms` now folds per-structure `qm_code` into the
+    JSON. Same atoms run on PySCF and QE land in different cache
+    entries.
+- **`make_backend` factory**: `code: qe` now wired (was placeholder).
+- **GST study** (`studies/gst_drift/gst_drift.yaml`):
+  - `GST_rocksalt` switched to `qm_code: qe, qm_functional: pbe`,
+    re-enabled `qm_relax: true`.
+  - All four strain scans switched back to `relax_method:
+    relaxed_constrained` (atoms relax inside each strained cell).
+  - QE-specific settings (`pseudo_dir`, `pseudopotentials`,
+    `ecutwfc`, `ecutrho`, `kpts`) added to the global `qm:` block;
+    PySCF clusters ignore them.
+- **Tests added** (15, total 164):
+  - `tests/test_qe_backend.py` — backend construction, ASE atoms
+    round-trip, missing pseudopotential rejection, `input_data` shape,
+    functional name translation, spin-polarized variant, all three
+    constraint kinds (distance / angle / dihedral), single-point
+    unit conversion via fake calculator, settings fingerprint
+    sensitivity, factory dispatch, per-structure code override,
+    cache key separation by `qm_code`.
+- **Documentation**:
+  - README §"Setting up Quantum ESPRESSO" — install procedure for
+    QE binary, SSSP pseudopotential download, YAML wiring, per-element
+    UPF filename guide.
+  - GST `EXPERIMENT.md` §5.6 updated to reflect the QE
+    cluster/PBC split.
+
+### 2026-05-03 — PBC structures + `strain` scan kind
+
+Adds bulk-property training to PyField. The same training set can now
+mix periodic supercells (rocksalt, amorphous slabs) with passivated
+clusters (Peierls octahedra, defect motifs) — different physics gets
+the right DFT mode automatically.
+
+- **Schema** (`pyfield/config/schema.py`):
+  - `StructureCfg.pbc: bool = False`. When true, `box: [a, b, c]` is
+    treated as orthorhombic lattice vectors and the QM backend
+    dispatches to PBC mode. Triclinic / monoclinic cells (a future
+    `lattice: 3×3` field) plug in here without changing call sites.
+  - New `ScanType` value `"strain"` with five modes:
+    - `hydrostatic` — equivalent to `isotropic_scale` (kept as alias
+      since the strain framing is more natural for bulk training).
+    - `uniaxial` — strain along axis ∈ {x, y, z}.
+    - `biaxial` — strain in plane ∈ {xy, xz, yz}.
+    - `shear` — tilt the cell in plane ∈ {xy, xz, yz}.
+- **Strain transform** (`pyfield/scans/transforms.py:strain`):
+  - Builds a 3×3 deformation matrix F from `(mode, axis, value)`,
+    deforms the cell as `F · box` and atoms as `F · positions`
+    (preserving fractional coordinates).
+  - `make-scan` emits the strained structure with `qm_relax: true`
+    but **no internal-coordinate constraint** — the strained box
+    *is* the constraint. PyScf's PBC geom-opt only ever moves atoms
+    (never the cell), so an interior relax with the strained box is
+    exactly what we want. LAMMPS' default `minimize` keeps the
+    box fixed too, so the FF-side simulation is plain `minimize`
+    with no `fix restrain`.
+- **PySCF backend** (`pyfield/qm/pyscf_backend.py`):
+  - `_build_pbc_mf` builds `pyscf.pbc.gto.Cell` + `pyscf.pbc.dft.RKS`
+    at Γ-only k sampling.
+  - `single_point` and `relax` both dispatch on `structure.pbc`.
+  - PBC `relax` uses the same `pyscf.geomopt.geometric_solver` —
+    geometric_solver detects the periodic Cell and only optimises
+    atomic positions, never lattice vectors. Constraint specs
+    (`$set distance/angle/dihedral`) work identically across modes.
+- **Cache** (`pyfield/qm/cache.py`):
+  - `_canonical_atoms` now folds `pbc` into the JSON, so the same
+    atoms at the same coords land in different cache entries
+    depending on the QM mode.
+- **Atom replacement decision** (documentation): substitution stays
+  out of `make-scan`. Users hand-type each substituted structure as
+  a plain `structures:` entry and write `energy_combination` targets
+  that compare doped vs undoped energies. The README and DEV.md spell
+  out the rationale (substitution isn't a continuous coordinate;
+  symmetry-distinct sites need crystal symmetry analysis we don't
+  want to bake into the scan grammar).
+- **Tests added** (12, total 149):
+  - `test_pbc_backend.py` (4) — cluster mode builds molecular SCF;
+    PBC mode builds periodic SCF with a 3×3 lattice; the
+    `_is_pbc` dispatcher routes correctly; cache key separates PBC
+    and cluster runs of the same atoms.
+  - `test_scan_transforms.py` (7 new) — hydrostatic strain matches
+    `isotropic_scale`; uniaxial/biaxial only deform their axes;
+    shear introduces correct off-diagonal coupling; invalid mode /
+    missing axis errors are loud.
+  - `test_constrained_scan.py` (2 new) — strain expand emits
+    `minimize` with no restraints, structure boxes change with the
+    strain values, scan-point structures inherit `pbc: true` from
+    the reference.
 
 ### 2026-05-03 — CMA-ES optimizer (`method: cma`)
 

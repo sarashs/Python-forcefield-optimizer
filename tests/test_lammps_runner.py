@@ -80,4 +80,10 @@ def test_yaml_smoke_runs_with_long_lived_runner():
     result = run_sa(cfg)
     assert 0 < result.final_cost < 1e9
     # Phase 2 must not change the answer (same seed, same inputs, same SA logic).
-    assert abs(result.final_cost - 32907.21505210572) < 1e-6
+    # 2026-05-08: bumped from 32907.21505210572 after adding `min_modify dmax 0.05`
+    # to minimize.in.j2 (caps per-step atomic motion at 50 mÅ — protects
+    # unfit seed FFs from blowing the cell up on iteration 1, see GST drift
+    # study). The dmax cap forces slightly different per-step kinematics,
+    # producing 0.002 kcal/mol drift on the Cl2 minimize. Same converged
+    # geometry, same physics — just a numerically-different convergence path.
+    assert abs(result.final_cost - 32907.21744068185) < 1e-6

@@ -233,6 +233,76 @@ class _RecordingBackend(QmBackend):
                              energy_kcal_mol=-1.0)
 
 
+def test_strain_scan_emits_minimize_without_restraints():
+    """Strain's constraint is the strained cell itself — no `fix restrain`."""
+    cfg = PyFieldConfig.model_validate({
+        "forcefield": {"path": "ff.reax", "params": "params"},
+        "qm": {"code": "pyscf"},
+        "structures": {
+            "X": {
+                "box": [10, 10, 10], "pbc": True,
+                "atoms": [
+                    {"element": "C", "x": 0.0, "y": 0.0, "z": 0.0},
+                    {"element": "C", "x": 5.0, "y": 5.0, "z": 5.0},
+                ],
+            },
+        },
+        "simulations": {},
+        "targets": [],
+        "scans": [{
+            "type": "strain", "reference": "X", "name_prefix": "X_eos",
+            "mode": "hydrostatic",
+            "values": [-0.04, 0.0, 0.04],
+            "relax_method": "relaxed_constrained",
+        }],
+    })
+    expanded, _ = expand_scans(cfg)
+    # Each scan-point structure inherits pbc=True from the reference.
+    for i in range(3):
+        s = expanded.structures[f"X_eos_{i}"]
+        assert s.pbc is True
+        assert s.qm_relax is True
+        # No `constraint` field — strain has no internal-coord constraint.
+        assert "constraint" not in (s.__pydantic_extra__ or {})
+        # FF-side sim is `minimize` with no restraints.
+        sim = expanded.simulations[f"X_eos_{i}_sp"]
+        assert sim.type == "minimize"
+        extras = sim.__pydantic_extra__ or {}
+        assert not extras.get("restraints")
+
+
+def test_strain_scan_box_actually_changes():
+    cfg = PyFieldConfig.model_validate({
+        "forcefield": {"path": "ff.reax", "params": "params"},
+        "qm": {"code": "pyscf"},
+        "structures": {
+            "X": {
+                "box": [10, 10, 10], "pbc": True,
+                "atoms": [
+                    {"element": "C", "x": 1.0, "y": 1.0, "z": 1.0},
+                ],
+            },
+        },
+        "simulations": {},
+        "targets": [],
+        "scans": [{
+            "type": "strain", "reference": "X", "name_prefix": "X_uni",
+            "mode": "uniaxial", "axis": "z",
+            "values": [-0.05, 0.05],
+            "relax_method": "rigid",
+        }],
+    })
+    expanded, _ = expand_scans(cfg)
+    s_minus = expanded.structures["X_uni_0"]
+    s_plus = expanded.structures["X_uni_1"]
+    # Only z should differ from the original box.
+    assert s_minus.box == (10.0, 10.0, 9.5)
+    assert s_plus.box == (10.0, 10.0, 10.5)
+    # The atom's z-coord scales too.
+    assert s_minus.atoms[0].z == pytest.approx(0.95)
+    assert s_plus.atoms[0].z == pytest.approx(1.05)
+
+
 def test_populate_qm_forwards_constraint_to_backend(tmp_path):
     cfg = _basic_dimer_cfg(cache_dir=tmp_path / "cache")
     expanded, _ = expand_scans(cfg)

@@ -72,6 +72,12 @@ def _apply(scan: ScanCfg, structure: StructureCfg, value: float) -> StructureCfg
         )
     if scan.type == "isotropic_scale":
         return T.isotropic_scale(structure, value)
+    if scan.type == "strain":
+        return T.strain(
+            structure, value,
+            mode=extras.get("mode", "hydrostatic"),
+            axis=extras.get("axis"),
+        )
     raise NotImplementedError(f"unknown scan.type={scan.type!r}")
 
 
@@ -83,7 +89,15 @@ def _constraint_spec(scan: ScanCfg, value: float) -> Dict | None:
     """Return a {kind, atoms, value} dict describing the constraint that
     QM (geomeTRIC `$set`) and FF (`fix restrain`) must enforce, or None
     when no constraint applies (rigid scans, atom_displacement,
-    isotropic_scale)."""
+    isotropic_scale, strain).
+
+    Strain has no internal-coordinate constraint — the *cell vectors*
+    are fixed at the strained values and atoms relax inside them. The
+    PBC backend enforces this naturally (its geom-opt only moves
+    atoms, never cells), and LAMMPS' default `minimize` keeps the box
+    fixed too. So strain scan points get `qm_relax: true` (interior
+    relax) but no `constraint:` field.
+    """
     if scan.relax_method != "relaxed_constrained":
         return None
     extras = scan.__pydantic_extra__ or {}
@@ -215,25 +229,43 @@ def expand_scans(
                 new_struct = new_struct.model_copy(update={
                     "qm_relax": True, "constraint": constraint,
                 })
+            elif scan.relax_method == "relaxed_constrained" and scan.type == "strain":
+                # Strain's "constraint" is the cell vectors themselves
+                # (already baked into new_struct.box) — there's no
+                # internal-coordinate constraint to add. Still flag
+                # qm_relax so the PBC backend runs an interior relax.
+                new_struct = new_struct.model_copy(update={"qm_relax": True})
 
             new_structures[struct_name] = new_struct
 
-            # Build the FF-side simulation. relaxed_constrained → minimize
-            # with a `restraints:` string holding the same constraint as
-            # the QM side. rigid → single_point at the perturbed geometry.
-            if scan.relax_method == "relaxed_constrained":
-                if constraint is None:
+            # Build the FF-side simulation. `ff_relax_method` overrides
+            # `relax_method` on the FF side only — used when QM should
+            # still do `relaxed_constrained` (so the cached QM data is
+            # the proper relaxed energy at each scan point) but the seed
+            # FF isn't physical enough to minimize without exploding.
+            ff_method = scan.ff_relax_method or scan.relax_method
+            # - rigid → single_point at the (QM-relaxed) geometry.
+            # - relaxed_constrained, internal coord → minimize with `fix
+            #   restrain` mirroring the QM constraint.
+            # - relaxed_constrained, strain → minimize with no restraints;
+            #   the strained box is the constraint and LAMMPS' default
+            #   minimize keeps the box fixed.
+            if ff_method == "relaxed_constrained":
+                if constraint is not None:
+                    restraint_str = _restraint_string(constraint, scan.restraint_k)
+                    sim_cfg = SimulationCfg.model_validate({
+                        "structure": struct_name,
+                        "type": "minimize",
+                        "restraints": [restraint_str],
+                    })
+                elif scan.type == "strain":
+                    sim_cfg = SimulationCfg(structure=struct_name, type="minimize")
+                else:
                     raise RuntimeError(
-                        f"scan {scan.name_prefix!r}: relax_method="
+                        f"scan {scan.name_prefix!r}: ff_relax_method="
                         "relaxed_constrained but no constraint could be "
                         "derived from this scan kind."
                     )
-                restraint_str = _restraint_string(constraint, scan.restraint_k)
-                sim_cfg = SimulationCfg.model_validate({
-                    "structure": struct_name,
-                    "type": "minimize",
-                    "restraints": [restraint_str],
-                })
             else:
                 sim_cfg = SimulationCfg(structure=struct_name, type="single_point")
             new_simulations[sim_name] = sim_cfg

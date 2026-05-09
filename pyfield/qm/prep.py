@@ -34,7 +34,13 @@ from pyfield.config.schema import (
     StructureCfg,
     is_qm_placeholder,
 )
-from pyfield.qm.base import QmBackend, QmRelaxResult, QmSinglePoint, make_backend
+from pyfield.qm.base import (
+    QmBackend,
+    QmRelaxResult,
+    QmSinglePoint,
+    make_backend,
+    structure_code,
+)
 from pyfield.qm.cache import QmCache
 
 
@@ -65,6 +71,28 @@ def _structure_constraint(structure: StructureCfg) -> Optional[Dict]:
     return extras.get("constraint")
 
 
+class _BackendCache:
+    """Lazy per-code backend factory.
+
+    Lets a single training set mix backends — typically PySCF for
+    cluster references and QE for PBC supercells. Each unique code
+    builds its backend once on first use; subsequent structures with
+    the same code reuse the cached instance.
+    """
+
+    def __init__(self, qm_cfg, default: Optional[QmBackend] = None):
+        self._qm = qm_cfg
+        self._cache: Dict[str, QmBackend] = {}
+        if default is not None:
+            self._cache[qm_cfg.code] = default
+
+    def for_structure(self, structure: StructureCfg) -> QmBackend:
+        code = structure_code(structure, fallback=self._qm.code)
+        if code not in self._cache:
+            self._cache[code] = make_backend(self._qm, code_override=code)
+        return self._cache[code]
+
+
 def relax_structures(
     cfg: PyFieldConfig,
     *,
@@ -86,9 +114,8 @@ def relax_structures(
     """
     if cfg.qm is None:
         raise ValueError("relax_structures called on a config without a `qm:` block")
-    backend = backend or make_backend(cfg.qm)
+    backends = _BackendCache(cfg.qm, default=backend)
     cache = QmCache(cfg.qm.cache_dir)
-    fingerprint = backend.settings_fingerprint()
     journal: List[Tuple[str, bool, str]] = []
 
     populated_structures: Dict[str, StructureCfg] = dict(cfg.structures)
@@ -103,16 +130,17 @@ def relax_structures(
             continue
         if requested is not None and name not in requested:
             continue
+        be = backends.for_structure(struct)
         constraint = _structure_constraint(struct)
         op = "relax" if constraint is None else "relax_constrained"
         result, key, hit = cache.memoise_relax(
-            struct, fingerprint, op,
-            lambda s=struct, c=constraint: backend.relax(s, constraint=c),
+            struct, be.settings_fingerprint(), op,
+            lambda s=struct, c=constraint, b=be: b.relax(s, constraint=c),
             force=force,
             constraint=constraint,
         )
         populated_structures[name] = result.structure
-        journal.append((f"{op} {name}", hit, key))
+        journal.append((f"{op} {name} [{be.name}]", hit, key))
 
     populated = cfg.model_copy(update={"structures": populated_structures})
     return populated, journal
@@ -133,9 +161,8 @@ def populate_qm(
     """
     if cfg.qm is None:
         raise ValueError("populate_qm called on a config without a `qm:` block")
-    backend = backend or make_backend(cfg.qm)
+    backends = _BackendCache(cfg.qm, default=backend)
     cache = QmCache(cfg.qm.cache_dir)
-    fingerprint = backend.settings_fingerprint()
     journal: List[Tuple[str, bool, str]] = []
 
     populated_structures: Dict[str, StructureCfg] = dict(cfg.structures)
@@ -151,17 +178,18 @@ def populate_qm(
     for name, struct in cfg.structures.items():
         if not struct.qm_relax:
             continue
+        be = backends.for_structure(struct)
         constraint = _structure_constraint(struct)
         op = "relax" if constraint is None else "relax_constrained"
         result, key, hit = cache.memoise_relax(
-            struct, fingerprint, op,
-            lambda s=struct, c=constraint: backend.relax(s, constraint=c),
+            struct, be.settings_fingerprint(), op,
+            lambda s=struct, c=constraint, b=be: b.relax(s, constraint=c),
             force=force,
             constraint=constraint,
         )
         populated_structures[name] = result.structure
         relax_energies[name] = result.energy_kcal_mol
-        journal.append((f"{op} {name}", hit, key))
+        journal.append((f"{op} {name} [{be.name}]", hit, key))
 
     # ------------------------------------------------------------------
     # 2. Single-points for every simulation referenced by a `from: dft`
@@ -191,13 +219,14 @@ def populate_qm(
             )
             journal.append((f"reuse_relax_energy {sim_id}", True, ""))
             continue
+        be = backends.for_structure(struct)
         result, key, hit = cache.memoise_single_point(
-            struct, fingerprint, "single_point",
-            lambda s=struct: backend.single_point(s),
+            struct, be.settings_fingerprint(), "single_point",
+            lambda s=struct, b=be: b.single_point(s),
             force=force,
         )
         sp_results[sim_id] = result
-        journal.append((f"single_point {sim_id}", hit, key))
+        journal.append((f"single_point {sim_id} [{be.name}]", hit, key))
 
     # ------------------------------------------------------------------
     # 3. Walk targets, fill in the placeholders.

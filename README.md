@@ -30,7 +30,24 @@ Supported today:
 
 ## Architecture
 
-PyField is a `pyfield/` Python package. The pieces:
+PyField is a `pyfield/` Python package. At a glance:
+
+```mermaid
+flowchart LR
+    cli["pyfield.cli<br/>(run / qm-prep / qm-relax /<br/>make-scan)"] --> runner["pyfield.runner"]
+    runner --> qm["pyfield.qm<br/>(PySCF / QE backends<br/>+ content-keyed cache)"]
+    runner --> scans["pyfield.scans<br/>(6 perturbation kinds)"]
+    runner --> opt["pyfield.optimizers<br/>(sa / ga / sa+ga / cma)"]
+
+    opt --> obj["pyfield.objectives<br/>(plug-in cost pieces)"]
+    opt --> sim["pyfield.simulations<br/>(Jinja MD templates)"]
+    opt --> ff["pyfield.forcefield<br/>(ReaxFF parser/writer)"]
+
+    sim --> io["pyfield.io<br/>(LammpsRunner)"]
+    obj --> io
+```
+
+The pieces:
 
 - **`pyfield.forcefield`** — parser/writer for force-field files.
   Currently ReaxFF (`REAX_FF`); the `ForceField` base is shaped for
@@ -89,7 +106,7 @@ pyfield run tests/cl2.yaml
 This installs PyField as an editable package, registers the `pyfield`
 CLI on your PATH, and runs the Cl₂ ReaxFF smoke optimisation against
 `tests/cl2.yaml` — finishes in well under a second with a
-`FINAL cost: 32907.21505210572` line (`seed: 0` is set in the YAML so
+`FINAL cost: 32907.21744068185` line (`seed: 0` is set in the YAML so
 the run is bit-reproducible).
 
 The pre-Phase-1 text-format inputs still work via a deprecation shim:
@@ -98,6 +115,118 @@ The pre-Phase-1 text-format inputs still work via a deprecation shim:
 pyfield run-legacy tests/Trainingfile_2.txt tests/Inputstructurefile.txt \
   --ff tests/ffieldoriginal.txt --params tests/params --out tests/runs/legacy
 ```
+
+### Setting up Quantum ESPRESSO (optional, for PBC training)
+
+PySCF (the default QM backend) handles cluster training and small PBC
+cells well, but its plane-wave PBC gradient infrastructure is fragile
+for production-sized supercells. For bulk-property training (elastic
+constants, defect formation energies, vacancy migration barriers) we
+recommend Quantum ESPRESSO via PyField's `qe` backend. Setup is
+three steps.
+
+**1. Install QE.**
+
+```bash
+sudo apt install quantum-espresso        # Ubuntu / Debian
+# or
+conda install -c conda-forge qe           # cross-platform
+# or build from source: https://www.quantum-espresso.org/
+```
+
+After install, `pw.x` should be on `PATH`. **For any non-trivial cell, you
+want MPI** — single-core `pw.x` on an 18-atom GST cell at `ecutwfc=50,
+kpts=[2,2,2]` takes ~15 min per BFGS step, which compounds badly with
+the 25–30 step relaxes typical for our scan points. With MPI:
+
+```bash
+export ESPRESSO_COMMAND="mpirun -np 8 pw.x -in PREFIX.pwi > PREFIX.pwo"
+```
+
+Pick `-np` to match your physical core count (not hyperthreads). On
+8 cores you'll typically see 5–7× speedup over single-core. ASE picks
+up `ESPRESSO_COMMAND` automatically.
+
+> ⚠️ **Set this before launching `python` or `jupyter`.** ASE
+> snapshots the env var when the `EspressoProfile` is constructed.
+> Setting `os.environ['ESPRESSO_COMMAND'] = …` from inside an
+> already-running notebook kernel is too late for the profile that
+> was built at import time — restart the kernel after you export.
+> To check what the kernel sees: `import os;
+> print(os.environ.get('ESPRESSO_COMMAND'))`. `None` means
+> single-core.
+
+**2. Download SSSP pseudopotentials.**
+
+The Standard Solid-State Pseudopotentials (SSSP) library from
+Materials Cloud is the recommended pseudopotential set — well-tested
+across thousands of compounds. Download the *Efficiency* set (the
+*Precision* set works too, just slower):
+
+```bash
+mkdir -p ~/qe_pseudos && cd ~/qe_pseudos
+curl -fsSL -o SSSP.tar.gz \
+  "https://archive.materialscloud.org/api/records/rcyfm-68h65/files/SSSP_1.1.2_PBE_efficiency.tar.gz/content"
+tar xzf SSSP.tar.gz && rm SSSP.tar.gz
+```
+
+That's ~37 MB compressed → ~100 MB extracted, ~70 UPF files covering
+elements 1–83. Set the env var so PyField finds them:
+
+```bash
+export ESPRESSO_PSEUDO=~/qe_pseudos
+```
+
+**3. Tell PyField about it in the YAML.**
+
+A single `qm:` block can serve both PySCF clusters and QE bulk by
+adding QE-specific fields alongside the PySCF ones; per-structure
+`qm_code: qe` flips a structure to the QE backend:
+
+```yaml
+qm:
+  code: pyscf                  # default backend (cluster-style)
+  functional: b3lyp
+  basis: def2-svp
+  cache_dir: runs/qm_cache
+
+  # QE-specific settings, picked up by structures with qm_code: qe
+  pseudo_dir: /home/you/qe_pseudos     # or set $ESPRESSO_PSEUDO
+  pseudopotentials:
+    Ge: ge_pbe_v1.4.uspp.F.UPF
+    Sb: sb_pbe_v1.4.uspp.F.UPF
+    Te: Te_pbe_v1.uspp.F.UPF
+  ecutwfc: 50                  # Ry, orbital cutoff
+  ecutrho: 400                 # Ry, density cutoff (≈ 8 × ecutwfc)
+  kpts: [2, 2, 2]              # Γ-only (1,1,1) is fine for ≥30-atom supercells
+
+structures:
+  GST_rocksalt:
+    pbc: true
+    qm_code: qe                # → use QE for this structure
+    qm_functional: pbe         # PBE for bulk; QE doesn't do hybrid PBC well
+    box: [6.02, 6.02, 6.02]
+    qm_relax: true             # works reliably under QE
+    atoms: [...]
+```
+
+The QE cache is content-keyed the same way as PySCF (via
+`settings_fingerprint`), so re-running with a tweaked ffield is a
+no-op on the QM side. Per-element pseudopotential filenames *do*
+matter — change the UPF and the cache invalidates.
+
+**Picking pseudopotential filenames.** SSSP has both norm-conserving
+(`*ONCV*`, `*oncvpsp*`), ultrasoft (`*uspp*`, `*rrkjus*`), and PAW
+(`*kjpaw*`, `*paw*`) pseudopotentials, mixed across elements. For the
+GST drift study (`studies/gst_drift/`), the chosen UPFs are:
+
+- `Ge → ge_pbe_v1.4.uspp.F.UPF` — ultrasoft, GBRV / PSlibrary
+- `Sb → sb_pbe_v1.4.uspp.F.UPF` — ultrasoft, GBRV / PSlibrary
+- `Te → Te_pbe_v1.uspp.F.UPF`   — ultrasoft, GBRV / PSlibrary
+
+For a different element set, browse the SSSP catalog
+(<https://www.materialscloud.org/discover/sssp/table/efficiency>) and
+match filenames against `ls ~/qe_pseudos/`.
 
 ### Notes on LAMMPS
 
@@ -175,10 +304,37 @@ Step by step:
     QM and FF sides. Fine for diatomics or any system with no internal
     DOFs to relax.
   - `relaxed_constrained` — the reaction coordinate (distance / angle
-    / dihedral / dimer-anchor distance) is held fixed; QM does a
-    constrained geom-opt (geomeTRIC `$set`), FF does `minimize` with
-    `fix restrain` at the same constraint. Required for any polyatomic
-    system where substituents reorganize as you stretch / bend.
+    / dihedral / dimer-anchor distance / strain) is held fixed; QM
+    does a constrained geom-opt (geomeTRIC `$set` for internal
+    coordinates, locked-cell PBC relax for strain), FF does `minimize`
+    with `fix restrain` for internal coordinates or with the cell held
+    fixed for strain. Required for any polyatomic / bulk system where
+    other DOFs reorganize as you stretch / bend / strain.
+
+  Optional `ff_relax_method` overrides the FF side independently. Useful
+  during early-fit when the seed FF can't yet stably minimize the cells
+  (atoms NaN, cell explodes), but you still want QM to do
+  `relaxed_constrained`. Set `ff_relax_method: rigid` and the FF will be
+  evaluated as a `single_point` at the QM-relaxed geometry, while QM
+  still does the full constrained relax. Drop the override once CMA
+  produces an FF that can handle minimization.
+
+  **Periodic vs cluster.** Set `pbc: true` on a structure to flip the
+  QM backend into periodic mode (`pyscf.pbc.gto.Cell` with Γ-only k
+  sampling); the `box: [a, b, c]` field becomes the orthorhombic
+  lattice vectors. Cluster mode is the default (a non-interacting
+  bounding box). Both can coexist in the same training set —
+  `make-scan` dispatches per-structure.
+
+  **Atom replacement (substitution).** Intentionally *not* a scan
+  kind. A substitution isn't a continuous coordinate — it's an
+  enumeration of distinct compositions. The clean way to train against
+  substitution energies is to hand-type each substituted structure as
+  a separate `structures:` entry and add `energy_combination` targets
+  comparing it to the un-substituted baseline (`{ from: dft }` filled
+  in by `qm-prep`). Symmetry-distinct sites depend on the host
+  structure; automating that requires crystal symmetry analysis we'd
+  rather not bake into the scan grammar.
 
   Per-scan `legs` and `anchors` declare which atoms move *as a rigid
   group* with each anchor during the perturbation step (e.g. when
@@ -210,6 +366,17 @@ scans:
     atoms: [1, 2]
     values: [1.6, 1.9, 2.2, 2.5, 3.0]
     name_prefix: Cl2_d
+
+  # Bulk — strain scan on a periodic crystal cell (PBC). The box is
+  # locked at the strained values and atoms relax inside. Five modes:
+  # hydrostatic, uniaxial(axis), biaxial(plane), shear(plane).
+  - type: strain
+    reference: GST_rocksalt          # structure must have `pbc: true`
+    mode: uniaxial
+    axis: z
+    values: [-0.04, -0.02, 0, 0.02, 0.04]
+    relax_method: relaxed_constrained
+    name_prefix: GST_uni_z
 
   # Polyatomic — relaxed_constrained + legs so the substituents on
   # each anchor rotate WITH it during the perturbation. QM then

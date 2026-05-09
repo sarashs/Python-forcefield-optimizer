@@ -50,7 +50,14 @@ class MinimizeSimulation(Simulation):
             DATA_FILE=str(data_file),
             LOG_FILE=str(log_file),
             DUMP_FILE=str(dump_file),
-            MIN_STYLE=self.cfg.__pydantic_extra__.get("min_style", "cg"),
+            # `hftn` (Hessian-free truncated Newton) is the default minimizer
+            # because `cg` deadlocks LAMMPS' setup phase on PBC ReaxFF cells
+            # whose seed FF is far from physical (verified empirically on the
+            # GST_rocksalt cell with the placeholder-fitted GST seed: cg hangs
+            # indefinitely in `Min::setup`'s pre-iteration force eval, hftn
+            # converges in 0.26 s, fire in 4.6 s, sd hangs). Per-sim override
+            # is still possible via `min_style:` in the simulation's YAML.
+            MIN_STYLE=self.cfg.__pydantic_extra__.get("min_style", "hftn"),
             RESTRAINTS=self.cfg.__pydantic_extra__.get("restraints") or [],
         )
 

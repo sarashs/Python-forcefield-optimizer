@@ -35,10 +35,40 @@ def _canonical_atoms(structure: StructureCfg) -> str:
         [a.element, round(a.x, 6), round(a.y, 6), round(a.z, 6), round(a.charge, 6)]
         for a in structure.atoms
     ]
+    extras = getattr(structure, "__pydantic_extra__", {}) or {}
     return json.dumps({
         "atoms": rows,
         "box": [round(b, 6) for b in structure.box],
+        # `pbc` flips the QM mode (cluster vs periodic). Fold it into
+        # the key so the same atoms at the same coords give different
+        # cache entries depending on which mode was used.
+        "pbc": bool(getattr(structure, "pbc", False)),
+        # Per-structure QM overrides — different code/functional/basis
+        # → different result → different cache entry.
+        "qm_code": extras.get("qm_code"),
+        "qm_functional": extras.get("qm_functional"),
+        "qm_basis": extras.get("qm_basis"),
     }, sort_keys=True)
+
+
+def _merge_relax_with_input(cached: StructureCfg, original: StructureCfg) -> StructureCfg:
+    """Fold the input's dispatch metadata onto a cache-loaded structure.
+
+    The cache holds atoms / box / energy. Everything else that affects
+    downstream backend dispatch (pbc, qm_code, qm_functional, qm_basis,
+    constraint) is taken from the original input structure — the cache
+    hit means the same chemistry as a fresh relax, so the dispatch
+    profile must match too.
+    """
+    update = {
+        "pbc": getattr(original, "pbc", False),
+        "qm_relax": False,
+    }
+    extras = getattr(original, "__pydantic_extra__", {}) or {}
+    for key in ("qm_code", "qm_functional", "qm_basis", "constraint"):
+        if key in extras:
+            update[key] = extras[key]
+    return cached.model_copy(update=update)
 
 
 def _canonical_constraint(constraint) -> str:
@@ -104,19 +134,32 @@ class QmCache:
 
     def _load_relax(self, key: str) -> QmRelaxResult:
         d = json.loads((self._entry_dir(key) / "result.json").read_text())
-        from pyfield.config.schema import AtomCfg, StructureCfg as _S
-        atoms = [AtomCfg(**row) for row in d["atoms"]]
-        struct = _S(box=tuple(d["box"]), atoms=atoms, qm_relax=False)
+        from pyfield.config.schema import StructureCfg as _S
+        # Newer cache entries roundtrip the *full* StructureCfg (so
+        # `pbc`, `qm_code`, `qm_functional`, `constraint`, … survive
+        # the cache hit). Older entries only stored `box / atoms /
+        # qm_relax`; fall back to that shape so existing caches
+        # don't have to be invalidated.
+        if "structure" in d:
+            struct = _S.model_validate(d["structure"])
+        else:
+            from pyfield.config.schema import AtomCfg
+            atoms = [AtomCfg(**row) for row in d["atoms"]]
+            struct = _S(box=tuple(d["box"]), atoms=atoms, qm_relax=False)
         return QmRelaxResult(structure=struct, energy_kcal_mol=float(d["energy_kcal_mol"]))
 
     def _store_relax(self, key: str, result: QmRelaxResult) -> None:
         d = self._entry_dir(key)
         d.mkdir(parents=True, exist_ok=True)
+        # Dump the full StructureCfg (extras included) so cache hits
+        # produce the same object as a fresh relax — earlier we only
+        # stored `box / atoms`, which dropped `pbc`, `qm_code`,
+        # `qm_functional`, and the per-scan-point `constraint`,
+        # silently routing PBC structures through PySCF on cache hits.
         payload = {
             "kind": "relax",
             "energy_kcal_mol": result.energy_kcal_mol,
-            "atoms": [a.model_dump() for a in result.structure.atoms],
-            "box": list(result.structure.box),
+            "structure": result.structure.model_dump(mode="json"),
         }
         (d / "result.json").write_text(json.dumps(payload, indent=2))
 
@@ -151,7 +194,18 @@ class QmCache:
     ) -> tuple[QmRelaxResult, str, bool]:
         key = _key(structure, fingerprint, op, constraint=constraint)
         if not force and self.has(key):
-            return self._load_relax(key), key, True
+            cached = self._load_relax(key)
+            # Always re-attach the input structure's dispatch metadata
+            # (pbc, qm_code, qm_functional, qm_basis, constraint, …) on
+            # cache hits. New cache entries already contain these fields,
+            # but legacy entries don't — and downstream code routes
+            # backends by reading these off the result.structure.
+            merged = _merge_relax_with_input(cached.structure, structure)
+            return (
+                QmRelaxResult(structure=merged, energy_kcal_mol=cached.energy_kcal_mol),
+                key,
+                True,
+            )
         result = compute()
         self._store_relax(key, result)
         return result, key, False

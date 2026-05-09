@@ -33,3 +33,8 @@ tests/cl2_qm.populated.yaml
 tests/water_train.relaxed.yaml
 tests/water_train.scanned.yaml
 tests/water_train.populated.yaml
+studies/gst_drift/gst_drift.relaxed.yaml
+studies/gst_drift/gst_drift.scanned.yaml
+studies/gst_drift/gst_drift.populated.yaml
+studies/*/runs/
+studies/*/cost_trace.png

@@ -54,7 +54,8 @@ def test_qm_relax_only_runs_flagged_structures(tmp_path):
     backend = _FakeBackend(relax_table={1.0: 1.05})
     populated, journal = relax_structures(cfg, backend=backend)
     actions = [a for a, _, _ in journal]
-    assert actions == ["relax A"]                   # only A had the flag
+    assert len(actions) == 1
+    assert actions[0].startswith("relax A")            # only A had the flag
     assert populated.structures["A"].qm_relax is False
     assert populated.structures["A"].atoms[1].z == pytest.approx(1.05)
     # B untouched.
@@ -67,7 +68,8 @@ def test_qm_relax_only_override(tmp_path):
     backend = _FakeBackend(relax_table={2.0: 2.07})
     populated, journal = relax_structures(cfg, backend=backend, only=["B"])
     actions = [a for a, _, _ in journal]
-    assert actions == ["relax B"]
+    assert len(actions) == 1
+    assert actions[0].startswith("relax B")
     assert populated.structures["B"].atoms[1].z == pytest.approx(2.07)
 
 

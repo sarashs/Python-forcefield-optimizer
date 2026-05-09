@@ -11,7 +11,13 @@ atom_modify map hash
 read_data {{ DATA_FILE }}
 
 # 3.- Force-Field ##########################
-pair_style reaxff NULL
+# `safezone 3.0 mincap 200` enlarges the ReaxFF bond-list buffer above
+# LAMMPS' defaults (1.2 / 50). Strain-compressed cells (e.g. ε = -0.06
+# on the GST rocksalt) push atoms close together → local coordination
+# spikes → ERROR: "Not enough space for bonds". 3.0 × 200 covers the
+# typical strain envelope for solid-state training cells. Memory cost
+# is ≈ 5× the default, which is negligible at our cell sizes.
+pair_style reaxff NULL safezone 3.0 mincap 200
 pair_coeff * * {{ FFIELD_PATH }}{% for el in ELEMENTS %} {{ el }}{% endfor %}
 fix 99 all qeq/reaxff 1 0.0 10.0 1.0e-6 reaxff
 neighbor        2.0 bin
@@ -27,7 +33,36 @@ thermo 1000000
 {% if RESTRAINTS %}fix holdem all restrain{% for r in RESTRAINTS %} {{ r }}{% endfor %}
 fix_modify holdem energy yes
 {% endif %}min_style {{ MIN_STYLE }}
-minimize 1.0e-8 0.0 200000 2000000
+# `dmax 0.05` caps per-iteration atomic motion at 50 mÅ. Without
+# it, an unfit seed FF (very common at the start of a CMA fit)
+# produces enormous initial forces that push atoms out of the cell
+# in step 1; ReaxFF then reports NaN coordinates and silently
+# returns the last-finite energy, making every strain-scan point
+# give the same wrong answer (verified on the GST_hydro scan with
+# the placeholder seed: every strain → identical E=-53.06 with all
+# atoms NaN'd in the dump). Standard ReaxFF MD practice; doesn't
+# affect well-conditioned cells (final geometry is identical, just
+# more steps).
+min_modify dmax 0.05
+# Three layers of belt-and-suspenders termination so a pathological
+# seed FF can't hang the run forever:
+#   • `etol=1e-8`: stops cleanly when energy stops dropping (ReaxFF +
+#     QEq noise floor is ~1e-6, so this only fires for well-behaved
+#     cells; pathological ones never reach it).
+#   • `maxiter=2000 maxeval=20000`: caps the number of optimizer steps
+#     and force calls. Verified: Cl2 / water / trained GST converge
+#     in <100 iters, so well-behaved minimizes never touch this. With
+#     a bad seed FF where each force eval takes ~0.5s (QEq oscillating
+#     internally), 20k evals caps wall-clock at ~3 hours per sim.
+#   • `timer timeout 0:05:00`: hard wall-clock cap of 5 min. LAMMPS
+#     stops the current run cleanly at the next safe checkpoint and
+#     the rest of the script continues — so cost_breakdown moves on
+#     to the next sim instead of hanging the whole pipeline. Without
+#     this, a single bad sim could eat 8+ hours even with the iter
+#     caps (verified empirically on a strain-compressed GST cell with
+#     the seed FF: maxeval=50000 × 0.6s/eval = 8h hang).
+timer timeout 0:05:00 every 100
+minimize 1.0e-8 0.0 2000 20000
 undump DUMP2
 # Overwrite the dump file with the post-minimization structure so
 # structural_match etc. read the optimised geometry, not step 0.

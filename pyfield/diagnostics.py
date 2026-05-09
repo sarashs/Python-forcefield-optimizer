@@ -11,6 +11,8 @@ Pure inspection — no SA, no parameter perturbation. Useful for:
 """
 from __future__ import annotations
 
+import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -76,11 +78,28 @@ def _describe_target(tgt) -> str:
     return f"sim={sim!r}"
 
 
+def _make_progress(total: int, desc: str):
+    """tqdm.auto picks the right backend (notebook widget / terminal /
+    plain). Falls back to a no-op shim if tqdm isn't installed."""
+    try:
+        from tqdm.auto import tqdm
+        return tqdm(total=total, desc=desc, dynamic_ncols=True, leave=True)
+    except ImportError:
+        class _Null:
+            def update(self, n=1): pass
+            def set_postfix_str(self, s, refresh=True): pass
+            def write(self, s): print(s, flush=True)
+            def close(self): pass
+        return _Null()
+
+
 def cost_breakdown(
     cfg: PyFieldConfig,
     *,
     ffield_path: Optional[Path] = None,
     work_dir: Optional[Path] = None,
+    verbose: bool = True,
+    slow_threshold_s: float = 10.0,
 ) -> CostBreakdown:
     """Run every required simulation once and report per-sim energies +
     per-target residuals.
@@ -88,6 +107,12 @@ def cost_breakdown(
     `ffield_path` defaults to writing the FF currently parsed from
     `cfg.forcefield.path` — i.e. the *initial* FF. Pass an explicit path
     to evaluate against a post-SA best FF (`SAResult.best_ffield_path`).
+
+    Progress is reported via `tqdm.auto` (notebook widget in Jupyter,
+    terminal bar elsewhere). Each sim's wall-clock is tracked; sims
+    exceeding `slow_threshold_s` get an inline log line so a hung
+    simulation is visible without `py-spy`. Pass `verbose=False` to
+    silence everything except the final table.
     """
     ff = REAX_FF(str(cfg.forcefield.path), str(cfg.forcefield.params))
     ff.parseParamSelectionFile()
@@ -104,13 +129,34 @@ def cost_breakdown(
 
     sim_results: Dict[str, SimResult] = {}
     sim_energies: Dict[str, float] = {}
+    bar = _make_progress(len(needed_sims), desc="cost_breakdown") if verbose else _make_progress(0, desc="")
+    if verbose:
+        print(f"cost_breakdown: {len(needed_sims)} simulations to run", flush=True)
     with LammpsRunner() as runner:
-        for sim_id in needed_sims:
+        for i, sim_id in enumerate(needed_sims):
+            if verbose:
+                # Print BEFORE starting so a sim that hangs is visible.
+                # Without this, a hung sim is invisible — `bar.write()`
+                # below only fires *after* `sim.run()` returns.
+                print(f"  [{i+1}/{len(needed_sims)}] starting {sim_id} ...", flush=True)
+                sys.stderr.flush()
+                bar.set_postfix_str(sim_id, refresh=True)
+            t0 = time.perf_counter()
             sim = build_simulation(sim_id, cfg.simulations[sim_id], cfg)
             sim_results[sim_id] = sim.run(
                 ffield_path=ffield_path, work_dir=work_dir, runner=runner,
             )
             sim_energies[sim_id] = sim_results[sim_id].energy
+            dt = time.perf_counter() - t0
+            if verbose:
+                marker = " [slow]" if dt >= slow_threshold_s else ""
+                bar.write(f"  [{i+1}/{len(needed_sims)}]{marker} {sim_id}: "
+                          f"{dt:.2f}s  E={sim_energies[sim_id]:.3f}")
+                bar.update(1)
+                sys.stdout.flush()
+                sys.stderr.flush()
+    if verbose:
+        bar.close()
 
     ctx = ObjectiveContext(sim_results=sim_results)
     reports: List[TargetReport] = []

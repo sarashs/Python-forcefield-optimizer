@@ -43,6 +43,13 @@ class StructureCfg(BaseModel):
     dict on relaxed_constrained scan points (consumed by `qm-prep` to
     drive a constrained QM relax). Any extra you set will round-trip
     through the YAML serialiser.
+
+    `pbc: true` switches the QM backend to a periodic calculation
+    (`pyscf.pbc.gto.Cell` + `pyscf.pbc.dft.RKS`); the `box: [a, b, c]`
+    field is reinterpreted as the three orthorhombic lattice vectors.
+    Triclinic / monoclinic cells (a `lattice: 3×3` matrix) land in v2.
+    LAMMPS is intrinsically periodic with `boundary p p p` so no
+    template change is needed on the FF side.
     """
     model_config = ConfigDict(extra="allow")
     box: Tuple[float, float, float]
@@ -52,6 +59,11 @@ class StructureCfg(BaseModel):
     # configured QM backend and writes the relaxed coordinates back into
     # `atoms:` of the populated YAML (the flag itself is removed).
     qm_relax: bool = False
+    # When True, `box` is treated as orthorhombic lattice vectors and
+    # the QM backend runs a periodic calculation (PBC with Γ-only k
+    # point in v1). When False, `box` is just a non-interacting
+    # bounding box for cluster QM.
+    pbc: bool = False
 
     @model_validator(mode="after")
     def _exactly_one_source(self) -> "StructureCfg":
@@ -180,6 +192,7 @@ ScanType = Literal[
     "atom_displacement",
     "dimer_separation",
     "isotropic_scale",
+    "strain",
 ]
 
 
@@ -208,6 +221,15 @@ class ScanCfg(BaseModel):
       + FF constrained minimization (`fix restrain` at `restraint_k`).
       The reaction coordinate (distance / angle / dihedral) is held
       fixed on both sides; everything else relaxes.
+
+    `ff_relax_method` (optional, defaults to `relax_method`): override
+    for the FF-side simulation only. Useful when the seed FF can't yet
+    stably minimize the cells (atoms NaN, cell explodes) but you still
+    want QM to do `relaxed_constrained`. With `ff_relax_method: rigid`,
+    the FF is evaluated as a `single_point` at the QM-relaxed geometry,
+    while QM still does the full constrained relax. Once CMA produces
+    an FF that can handle minimization, drop the override to evaluate
+    both sides consistently.
     """
     model_config = ConfigDict(extra="allow")
     type: ScanType
@@ -218,6 +240,7 @@ class ScanCfg(BaseModel):
     target_weight: float = 1.0                      # weight applied to each generated target
 
     relax_method: RelaxMethod = "rigid"
+    ff_relax_method: Optional[RelaxMethod] = None   # override FF-side; None = inherit relax_method
     restraint_k: float = 2000.0                     # kcal/mol/Å² for FF-side fix restrain
     legs: Optional[Dict[str, List[int]]] = None     # role ("i"/"j"/"k"/"l") → atoms
     anchors: Optional[List[int]] = None             # dimer_separation: [a1, a2]
