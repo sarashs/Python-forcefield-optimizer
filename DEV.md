@@ -411,6 +411,14 @@ manually only if you suspect a numerical regression.
 
 ## 4. Known bugs and breakage (must-fix to make the tool usable)
 
+> **Scope note.** Items in §4 and §5 describe the **legacy** code path
+> (root-level `SA.py` / `GA.py` / `NNOpt.py`, reachable via
+> `pyfield run-legacy`). The production code path lives in
+> `pyfield/` and is described in §8's phase log; bugs there are
+> tracked under the relevant change-log entry in §9. The legacy
+> tree is kept around as a reference for the rewrite, not as a
+> recommended path. New users should ignore §4/§5 entirely.
+
 These are correctness issues, not stylistic ones.
 
 1. **`__main__.py` does not run.** `SA(...)` requires
@@ -1009,6 +1017,72 @@ Acceptance:
 ## 9. Change log
 
 Reverse-chronological track record of what's actually shipped.
+
+### 2026-05-09 — `qm_relax_cell` (variable-cell QE relax)
+
+Diagnosing the GST CMA plateau (cost stuck at ~1.5×10⁶ after 1000
+generations) traced back to a structural problem with the bulk
+training targets, not a parameter shortage:
+
+- **Root cause.** The `GST_rocksalt` reference was a literature 6.02 Å
+  cubic cell with atoms QE-relaxed inside it (`pyfield/qm/qe_backend.py:relax`
+  used ASE's plain `BFGS` — atoms only, cell pinned). PBE's actual
+  equilibrium volume for this Ge₂Sb₂Te₅ stoichiometry is noticeably
+  larger. The reference therefore sat on the descending wall of the
+  E(V) parabola, not at its minimum, and the seven hydrostatic strain
+  targets (built as `(1±ε) × ref_box`) sampled one side of that
+  parabola only — a monotone target ladder running `+2177 → 0 → −1316`
+  kcal/mol instead of a symmetric bowl. ReaxFF's E(V) is parabolic
+  around its own minimum no matter how the parameters are tuned; CMA's
+  best response was slope-matching the midpoint, leaving ±1000 kcal
+  residuals at the endpoints. That floor *is* the 1.5×10⁶ plateau.
+- **Fix.** Added `StructureCfg.qm_relax_cell: bool = False`
+  (`pyfield/config/schema.py`). When true on a `pbc: true` structure,
+  `qm-prep` runs QE in `calculation: vc-relax` mode (atoms + cell
+  vectors) instead of atoms-only BFGS. Auto-implies `qm_relax: true`;
+  rejected on `pbc: false` structures (cluster vacuum boxes would
+  collapse). The relaxed cell + atoms are written back into
+  `populated.yaml`'s `box:` and `atoms:` together, so the strain scan
+  bracket re-anchors symmetrically around the true `V_eq`.
+- **Why QE's native vc-relax, not ASE's `ExpCellFilter`.** ASE's
+  filter trick keeps the plane-wave basis fixed at the *initial*
+  cell — the basis goes stale as the cell expands, biasing the
+  optimizer with Pulay stress. QE's `vc-relax` handles this via
+  `cell_factor: 2.0` (pre-allocate the basis as if the cell were 2×
+  its starting volume). We pass `&IONS{ion_dynamics: bfgs}` and
+  `&CELL{cell_dynamics: bfgs, press_conv_thr: 0.5, cell_factor: 2.0,
+  cell_dofree: all}` in `_build_input_data(..., relax_cell=True)`.
+  (`cell_factor` lives in `&CELL`, not `&SYSTEM` — QE 6.4.x rejects
+  it from `&SYSTEM` with "bad line in namelist". Older docs are
+  inconsistent; verified against QE 6.4.1 in this run.) After QE returns, ASE's
+  Espresso calculator doesn't auto-update the atoms object's positions
+  on a vc-relax, so `_relax_vc` reads the last image of `espresso.pwo`
+  via `ase.io.read(..., index=-1)` and copies cell + positions onto a
+  new `StructureCfg`. Schema-level guardrail: a non-orthorhombic relax
+  result raises (the `box: [a, b, c]` schema doesn't carry off-diagonal
+  cell terms; constrain `cell_dofree` if symmetry breaking is needed).
+- **Cache key.** `pyfield/qm/prep.py:_relax_op` distinguishes
+  `relax_constrained` / `vc-relax` / `relax`, so flipping
+  `qm_relax_cell` on doesn't accidentally hit a stale atoms-only
+  result keyed against the same input box. `cache.py:_merge_relax_with_input`
+  also strips `qm_relax_cell` to false on cache hits (matches the
+  existing `qm_relax → false` strip).
+- **GST drift YAML.** Added `qm_relax_cell: true` to `GST_rocksalt`.
+  Cluster references (`Te2_wrong`, `Ge2_dumbbell`, `Sb2_dumbbell`) are
+  unchanged — they're `pbc: false` with vacuum-padding boxes, and the
+  validator rejects `qm_relax_cell` on them. Strain scans don't change:
+  they re-anchor automatically once the reference's `box:` updates in
+  `populated.yaml`. To pick up the fix, re-run `pyfield qm-prep`
+  (the QM cache content-keys on `box`, so the outdated atoms-only
+  entries simply aren't reused — there's no hand-invalidation step).
+- **EXPERIMENT.md §10** has the full diagnostic chain dated 2026-05-09:
+  monotone-vs-parabolic strain ladder picture, why ReaxFF physically
+  can't fit the asymmetric data, and the expected target-magnitude
+  reduction once the reference re-relaxes.
+- **Tests**: 174 still pass (3 new — schema validators for
+  `qm_relax_cell + pbc`, `qm_relax_cell` implying `qm_relax`, plus a
+  QE-backend `_build_input_data(relax_cell=True)` keyword test and a
+  dispatch test that vc-path is skipped when a constraint is present).
 
 ### 2026-05-08 — `cg`-minimize hang fix + per-side `ff_relax_method` override
 
@@ -2156,6 +2230,9 @@ structures:
     path: structures/SiOH4.xyz
     box: [25, 25, 25]
     qm_relax: true           # qm-prep optimises this structure first; populates an xyz it can reference
+    # qm_relax_cell: true    # PBC-only opt-in: also relax the cell (QE vc-relax). The
+                             # relaxed `box:` lands in populated.yaml alongside `atoms:`.
+                             # Skipped on cluster structures (their box is vacuum padding).
 
 targets:
   - kind: energy_combination

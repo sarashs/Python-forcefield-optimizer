@@ -71,6 +71,20 @@ def _structure_constraint(structure: StructureCfg) -> Optional[Dict]:
     return extras.get("constraint")
 
 
+def _relax_op(structure: StructureCfg, constraint: Optional[Dict]) -> str:
+    """Cache-key tag distinguishing the three relax modes.
+
+    Different ops → different cache entries, so flipping `qm_relax_cell`
+    on doesn't accidentally hit a stale atoms-only result keyed on the
+    same input box.
+    """
+    if constraint is not None:
+        return "relax_constrained"
+    if getattr(structure, "qm_relax_cell", False):
+        return "vc-relax"
+    return "relax"
+
+
 class _BackendCache:
     """Lazy per-code backend factory.
 
@@ -132,7 +146,7 @@ def relax_structures(
             continue
         be = backends.for_structure(struct)
         constraint = _structure_constraint(struct)
-        op = "relax" if constraint is None else "relax_constrained"
+        op = _relax_op(struct, constraint)
         result, key, hit = cache.memoise_relax(
             struct, be.settings_fingerprint(), op,
             lambda s=struct, c=constraint, b=be: b.relax(s, constraint=c),
@@ -180,7 +194,7 @@ def populate_qm(
             continue
         be = backends.for_structure(struct)
         constraint = _structure_constraint(struct)
-        op = "relax" if constraint is None else "relax_constrained"
+        op = _relax_op(struct, constraint)
         result, key, hit = cache.memoise_relax(
             struct, be.settings_fingerprint(), op,
             lambda s=struct, c=constraint, b=be: b.relax(s, constraint=c),

@@ -1,0 +1,263 @@
+# studies/gst_drift/gst_drift.yaml — Ge2Sb2Te5 ReaxFF refit for the
+# drift-mechanism study. See EXPERIMENT.md in this folder for the
+# scientific plan, parameter provenance, and validation strategy.
+
+forcefield:
+  path: studies/gst_drift/ffield.reax.GST
+  type: reaxff
+  params: studies/gst_drift/params_GST
+
+qm:
+  # Default backend for the cluster training: PySCF molecular DFT,
+  # B3LYP/def2-svp. Hybrid is required for the Peierls splitting
+  # (Caravati 2009). The PBC structures (just `GST_rocksalt` here)
+  # use a per-structure `qm_code: qe` override — PySCF's PBC
+  # gradients aren't reliable enough for production cell sizes, so
+  # QE drives the bulk training instead.
+  code: pyscf
+  functional: b3lyp
+  basis: def2-svp
+  cache_dir: studies/gst_drift/runs/qm_cache
+
+  # Per-structure `qm_code: qe` overrides read these QE-specific
+  # settings. ESPRESSO_PSEUDO env or `pseudo_dir:` here points at the
+  # SSSP UPF directory — see README §"Setting up Quantum ESPRESSO".
+  pseudo_dir: /home/ubuntu/qe_pseudos
+  pseudopotentials:
+    Ge: ge_pbe_v1.4.uspp.F.UPF
+    Sb: sb_pbe_v1.4.uspp.F.UPF
+    Te: Te_pbe_v1.uspp.F.UPF
+  ecutwfc: 40      # Ry — orbital cutoff (50 for production; 40 is the demo trade-off)
+  ecutrho: 320     # Ry — density cutoff (= 8×ecutwfc; SSSP recommended ratio)
+  kpts: [1, 1, 1]  # Γ-only: fast for the demo. Bump to [2,2,2] or [3,3,3] for
+                   # production elastic-constant fits (k-point convergence ~10 meV).
+                   # Without MPI, even Γ-only takes ~15 min per BFGS step on 18 atoms;
+                   # set ESPRESSO_COMMAND='mpirun -np 8 pw.x ...' for ~5× speedup.
+
+structures:
+  # ─────────────────────────── BULK (PBC, QE) ─────────────────────────
+  # 18-atom rocksalt Ge2Sb2Te5 cell. Cation sublattice: 5 Ge + 5 Sb + 2
+  # vacancies (the canonical 20% structural vacancy concentration of
+  # cubic GST — Yamada 1991). Initial lattice 6.02 Å × 6.02 Å × 6.02 Å.
+  #
+  # `qm_code: qe` — drive this structure with Quantum ESPRESSO instead
+  # of PySCF. PySCF's PBC nuclear gradients are partial / unreliable
+  # for moderately sized supercells; QE's plane-wave SCF + analytic
+  # forces handle them cleanly. Mixing backends across a training set
+  # is the standard ReaxFF pattern (Sosso 2012 used QE-style
+  # plane-wave bulk + Gaussian molecular cluster).
+  GST_rocksalt:
+    pbc: true
+    qm_code: qe                 # use QE backend for this structure
+    qm_functional: pbe          # PBE for bulk; B3LYP not needed (and not in QE PBC anyway)
+    box: [6.02, 6.02, 6.02]     # literature seed; vc-relax will move it to PBE's true equilibrium
+    qm_relax: true              # QE's PBC gradients are reliable; full atom relax is fine
+    qm_relax_cell: true         # also relax the cell (vc-relax). The strain ladder anchors
+                                # symmetrically around the true V_eq instead of one side of
+                                # an off-equilibrium parabola — keeps bulk targets ~10× smaller
+                                # and parabolic, which ReaxFF can actually fit. See
+                                # studies/gst_drift/EXPERIMENT.md §10 (2026-05-09).
+    atoms:
+      # Te on one fcc sublattice (origin) — 12 sites in a 2×2×2 fcc:
+      - { element: Te, x: 0.000, y: 0.000, z: 0.000 }
+      - { element: Te, x: 3.010, y: 3.010, z: 0.000 }
+      - { element: Te, x: 3.010, y: 0.000, z: 3.010 }
+      - { element: Te, x: 0.000, y: 3.010, z: 3.010 }
+      - { element: Te, x: 1.505, y: 1.505, z: 1.505 }
+      - { element: Te, x: 4.515, y: 4.515, z: 1.505 }
+      - { element: Te, x: 4.515, y: 1.505, z: 4.515 }
+      - { element: Te, x: 1.505, y: 4.515, z: 4.515 }
+      # Cation sublattice (offset by (a/2, 0, 0)) — 5 Ge + 5 Sb + 2 vacancies.
+      # We pick a representative random arrangement; atom indexing is
+      # what the user perturbs in any future hand-typed substitution
+      # studies.
+      - { element: Ge, x: 1.505, y: 0.000, z: 0.000 }   #  9
+      - { element: Ge, x: 4.515, y: 3.010, z: 0.000 }   # 10
+      - { element: Ge, x: 4.515, y: 0.000, z: 3.010 }   # 11
+      - { element: Ge, x: 1.505, y: 3.010, z: 3.010 }   # 12
+      - { element: Ge, x: 0.000, y: 1.505, z: 1.505 }   # 13
+      - { element: Sb, x: 3.010, y: 4.515, z: 1.505 }   # 14
+      - { element: Sb, x: 3.010, y: 1.505, z: 4.515 }   # 15
+      - { element: Sb, x: 0.000, y: 4.515, z: 4.515 }   # 16
+      - { element: Sb, x: 1.505, y: 1.505, z: 0.000 }   # 17
+      - { element: Sb, x: 4.515, y: 4.515, z: 0.000 }   # 18
+      # The two cation vacancies are at sites (4.515, 1.505, 3.010) and
+      # (1.505, 4.515, 3.010) — simply omitted from the atoms list.
+
+  # ─────────────────────────── CLUSTERS (no PBC, H-passivated) ────────
+  # Peierls Ge–Te6 octahedron. 1 Ge + 6 Te + 30 H caps. The Ge sits at
+  # the centre of the Te6 cage; each Te is capped by 5 H atoms placed
+  # roughly along the missing bulk-cation directions.
+  # GeTe6_Peierls cluster — DEFERRED to v2 of this training set.
+  #
+  # The 37-atom (1 Ge + 6 Te + 30 H caps) cluster is too expensive for
+  # PySCF molecular DFT at any reasonable level of theory on a typical
+  # workstation: B3LYP/def2-svp + ECP + density fitting still budgets
+  # &gt; 30 min per geom-opt step (mostly the exact-exchange evaluation
+  # over 30 H caps). PBE is faster but the H-passivation cost
+  # dominates either way.
+  #
+  # Better v2 approaches (any one would unlock this):
+  #   - ORCA backend with RIJCOSX (10× faster hybrid DFT than PySCF)
+  #   - Closed-shell molecular cluster (e.g. (GeTe)₄ cube, 8 atoms,
+  #     no caps needed) that captures Peierls-like distortion
+  #   - QE-on-cluster mode: large vacuum box + plane waves
+  #
+  # The Peierls double-well physics (drift mechanism B) is partially
+  # covered by the bulk strain scans on `GST_rocksalt` — the
+  # rock-salt phase has the Peierls distortion built in, and the
+  # strain response measures it indirectly.
+
+  # GeTe4 tetrahedral cluster — DEFERRED to v2 of this training set.
+  # PySCF B3LYP/def2-svp SCF on the 9-atom Td cluster has near-zero
+  # Hessian eigenvalues (degenerate t2 orbitals at central Ge) that
+  # geomeTRIC can't navigate; even the Newton SCF + broken-Td
+  # perturbation we tried takes &gt; 10 min per relax. The
+  # GeTe6_Peierls cluster already covers the dominant Ge coordination
+  # physics (4-fold-vs-6-fold competition shows up in the Peierls
+  # double-well shape). Leaving the tetrahedral motif as a v2 add-on
+  # once we have a more robust QM backend (e.g. ORCA, which handles
+  # heavy-element Td clusters reliably).
+
+  # Te–Te wrong-bond fragment (homopolar Te bond + 1 H per Te).
+  # H atoms are bent off-axis (~92° H-Te-Te angle) to mimic real
+  # H₂Te / H-Te-Te-H chemistry. A perfectly collinear arrangement
+  # makes the π orbitals along y / z exactly degenerate, which
+  # PySCF SCF can't converge through (DIIS oscillates indefinitely).
+  Te2_wrong:
+    box: [20, 20, 20]
+    qm_relax: true
+    atoms:
+      - { element: Te, x:  0.000, y:  0.0, z:  0.0 }
+      - { element: Te, x:  2.840, y:  0.0, z:  0.0 }
+      - { element: H,  x: -0.060, y:  1.660, z:  0.0 }
+      - { element: H,  x:  2.900, y:  1.660, z:  0.0 }
+
+  # Ge–Ge dumbbell (3 H per Ge for tetravalent Ge).
+  Ge2_dumbbell:
+    box: [20, 20, 20]
+    qm_relax: true
+    atoms:
+      - { element: Ge, x:  0.000, y:  0.0, z:  0.0 }
+      - { element: Ge, x:  2.450, y:  0.0, z:  0.0 }
+      - { element: H,  x: -1.350, y:  0.870, z:  0.0 }
+      - { element: H,  x: -1.350, y: -0.870, z:  0.0 }
+      - { element: H,  x: -0.000, y:  0.000, z:  1.550 }
+      - { element: H,  x:  3.800, y:  0.870, z:  0.0 }
+      - { element: H,  x:  3.800, y: -0.870, z:  0.0 }
+      - { element: H,  x:  2.450, y:  0.000, z:  1.550 }
+
+  # Sb–Sb dumbbell (2 H per Sb for trivalent Sb in chalcogenide context).
+  # H atoms slightly off-z=0 plane to break σh symmetry — keeps SCF
+  # robust without changing the physics meaningfully.
+  Sb2_dumbbell:
+    box: [20, 20, 20]
+    qm_relax: true
+    atoms:
+      - { element: Sb, x:  0.000, y:  0.0, z:  0.0 }
+      - { element: Sb, x:  2.900, y:  0.0, z:  0.0 }
+      - { element: H,  x: -1.610, y:  0.870, z:  0.300 }
+      - { element: H,  x: -1.610, y: -0.870, z: -0.300 }
+      - { element: H,  x:  4.510, y:  0.870, z:  0.300 }
+      - { element: H,  x:  4.510, y: -0.870, z: -0.300 }
+
+simulations: {}              # populated by make-scan
+targets: []                  # populated by make-scan + qm-prep
+
+scans:
+  # ───────────────────────── BULK STRAIN SCANS (PBC) ───────────────────
+  # Hydrostatic — gives B (bulk modulus).
+  - type: strain
+    reference: GST_rocksalt
+    name_prefix: GST_hydro
+    mode: hydrostatic
+    values: [-0.06, -0.04, -0.02, 0.0, 0.02, 0.04, 0.06]
+    relax_method: relaxed_constrained
+    ff_relax_method: rigid             # FF eval as single_point at QM geom (early-fit; remove once FF stable enough to minimize)
+
+  # Uniaxial along z — gives C11 (combined with hydrostatic).
+  - type: strain
+    reference: GST_rocksalt
+    name_prefix: GST_uni_z
+    mode: uniaxial
+    axis: z
+    values: [-0.04, -0.02, 0.02, 0.04]
+    relax_method: relaxed_constrained
+    ff_relax_method: rigid             # FF eval as single_point at QM geom (early-fit; remove once FF stable enough to minimize)
+
+  # Biaxial in xy — separates C12 from C11.
+  - type: strain
+    reference: GST_rocksalt
+    name_prefix: GST_bi_xy
+    mode: biaxial
+    axis: xy
+    values: [-0.04, -0.02, 0.02, 0.04]
+    relax_method: relaxed_constrained
+    ff_relax_method: rigid             # FF eval as single_point at QM geom (early-fit; remove once FF stable enough to minimize)
+
+  # Shear in xy — gives C44.
+  - type: strain
+    reference: GST_rocksalt
+    name_prefix: GST_shr_xy
+    mode: shear
+    axis: xy
+    values: [-0.04, -0.02, 0.02, 0.04]
+    relax_method: relaxed_constrained
+    ff_relax_method: rigid             # FF eval as single_point at QM geom (early-fit; remove once FF stable enough to minimize)
+
+  # PEIERLS DOUBLE-WELL SCAN deferred along with GeTe6_Peierls
+  # itself — see the structures block. The bulk strain scans on
+  # GST_rocksalt indirectly probe Peierls physics (the rocksalt
+  # phase has the asymmetric 3+3 Ge–Te split built in; deformation
+  # under strain measures how stiff that asymmetry is).
+
+  # COORDINATION SWITCH SCANS (GeTe4_tet) deferred — see structures
+  # block above.
+  # covers this physics (4-fold vs 6-fold Ge coordination competition).
+
+  # ───────────────── HOMOPOLAR BOND COSTS (3 CLUSTERS) ────────────────
+  # Scan ranges deliberately stop at ~1.3 × the equilibrium bond — past
+  # that, the homopolar bond becomes diradical-like and closed-shell
+  # B3LYP can't converge SCF inside the gradient scanner (PySCF reports
+  # "Nuclear gradients of DFRKS_Scanner not converged"). The five
+  # points we keep cover the well shape from compressed-through-
+  # equilibrium-through-stretched, which is what the FF training needs.
+  - type: bond_stretch
+    reference: Te2_wrong
+    name_prefix: Te2_d
+    atoms: [1, 2]
+    values: [2.5, 2.7, 2.84, 3.0, 3.3]
+    relax_method: relaxed_constrained
+    ff_relax_method: rigid             # FF eval as single_point at QM geom (early-fit; remove once FF stable enough to minimize)
+
+  - type: bond_stretch
+    reference: Ge2_dumbbell
+    name_prefix: Ge2_d
+    atoms: [1, 2]
+    values: [2.2, 2.35, 2.45, 2.6, 2.8, 3.0]
+    relax_method: relaxed_constrained
+    ff_relax_method: rigid             # FF eval as single_point at QM geom (early-fit; remove once FF stable enough to minimize)
+
+  - type: bond_stretch
+    reference: Sb2_dumbbell
+    name_prefix: Sb2_d
+    atoms: [1, 2]
+    values: [2.6, 2.8, 2.9, 3.05, 3.3]
+    relax_method: relaxed_constrained
+    ff_relax_method: rigid             # FF eval as single_point at QM geom (early-fit; remove once FF stable enough to minimize)
+
+# ───────────────────────── OPTIMISER ─────────────────────────────────
+optimizer:
+  method: cma
+  generations: 2000
+  cma_sigma0: 0.3              # 30 % of median parameter span as initial step
+  cma_popsize: 0               # 0 = use cma's default 4 + ⌊3·ln(N)⌋
+  parallel: true
+  processors: 6                # tune to your CPU; 6 cores is a good default
+  seed: 0
+  show_progress: true
+  record_costs: true
+
+output:
+  dir: studies/gst_drift/runs/sa
+  record_costs: true

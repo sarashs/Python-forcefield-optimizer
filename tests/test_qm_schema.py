@@ -83,3 +83,39 @@ def test_hand_typed_target_unchanged_by_validator():
 def test_qm_unknown_code_rejected():
     with pytest.raises(ValidationError):
         QmCfg.model_validate({"code": "totally_not_a_code"})
+
+
+def test_qm_relax_cell_requires_pbc():
+    """vc-relax is only meaningful for periodic structures — clusters
+    have a vacuum-padding box that vc-relax would happily collapse.
+    Reject the combination at validation time."""
+    with pytest.raises(ValidationError, match="qm_relax_cell"):
+        StructureCfg.model_validate({
+            "box": [10, 10, 10],
+            "atoms": [{"element": "H", "x": 0, "y": 0, "z": 0}],
+            "qm_relax_cell": True,
+            "pbc": False,
+        })
+
+
+def test_qm_relax_cell_implies_qm_relax():
+    """vc-relax also relaxes atoms internally — auto-imply rather than
+    forcing the user to set both flags."""
+    s = StructureCfg.model_validate({
+        "box": [6, 6, 6],
+        "pbc": True,
+        "qm_relax_cell": True,
+        "atoms": [{"element": "H", "x": 0, "y": 0, "z": 0}],
+    })
+    assert s.qm_relax_cell is True
+    assert s.qm_relax is True
+
+
+def test_qm_relax_cell_default_is_false():
+    s = StructureCfg.model_validate({
+        "box": [6, 6, 6],
+        "pbc": True,
+        "atoms": [{"element": "H", "x": 0, "y": 0, "z": 0}],
+    })
+    assert s.qm_relax_cell is False
+    assert s.qm_relax is False

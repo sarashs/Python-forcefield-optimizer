@@ -63,6 +63,7 @@ def _merge_relax_with_input(cached: StructureCfg, original: StructureCfg) -> Str
     update = {
         "pbc": getattr(original, "pbc", False),
         "qm_relax": False,
+        "qm_relax_cell": False,
     }
     extras = getattr(original, "__pydantic_extra__", {}) or {}
     for key in ("qm_code", "qm_functional", "qm_basis", "constraint"):

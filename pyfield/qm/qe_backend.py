@@ -136,11 +136,25 @@ class QEBackend(QmBackend):
         return sorted({sym for sym in atoms.get_chemical_symbols()
                        if sym not in self.pseudopotentials})
 
-    def _build_input_data(self, functional: Optional[str] = None) -> dict:
+    def _build_input_data(
+        self,
+        functional: Optional[str] = None,
+        *,
+        relax_cell: bool = False,
+    ) -> dict:
+        """Construct the QE input-data dict.
+
+        With `relax_cell=True` we switch `calculation` from `scf` to
+        `vc-relax` and add the `&IONS` and `&CELL` namelists QE needs
+        to drive a variable-cell BFGS internally. `cell_factor` pre-
+        sizes the plane-wave basis to tolerate the cell expanding
+        during the relax (~2× volume range without the basis going
+        stale — the classic Pulay-stress fix).
+        """
         xc = _qe_input_dft(functional or self.functional)
-        return {
+        data: dict = {
             "control": {
-                "calculation": "scf",
+                "calculation": "vc-relax" if relax_cell else "scf",
                 "verbosity": "low",
                 "tprnfor": True,
                 "tstress": True,
@@ -165,8 +179,32 @@ class QEBackend(QmBackend):
                 "electron_maxstep": 200,
             },
         }
+        if relax_cell:
+            data["control"]["forc_conv_thr"] = 1.0e-3   # Ry/bohr (~0.025 eV/Å)
+            data["control"]["etot_conv_thr"] = 1.0e-4   # Ry
+            data["ions"] = {"ion_dynamics": "bfgs"}
+            data["cell"] = {
+                "cell_dynamics": "bfgs",
+                "press_conv_thr": 0.5,                  # kbar
+                "cell_dofree": "all",
+                # cell_factor lives in &CELL (not &SYSTEM — older QE
+                # docs are inconsistent about this and 6.4.x rejects
+                # it from &SYSTEM with "bad line in namelist &system").
+                # Pre-allocates the plane-wave basis as if the cell
+                # were 2× larger so it doesn't go stale during the
+                # internal BFGS — the standard Pulay-stress fix.
+                "cell_factor": 2.0,
+            }
+        return data
 
-    def _make_calculator(self, atoms, functional: Optional[str] = None):
+    def _make_calculator(
+        self,
+        atoms,
+        functional: Optional[str] = None,
+        *,
+        relax_cell: bool = False,
+        directory: Optional[str] = None,
+    ):
         from ase.calculators.espresso import Espresso, EspressoProfile
         missing = self._missing_pseudos(atoms)
         if missing:
@@ -177,12 +215,15 @@ class QEBackend(QmBackend):
         # ASE 3.23+ uses an EspressoProfile to bundle command + pseudo_dir.
         cmd = self.command or "pw.x"
         profile = EspressoProfile(command=cmd, pseudo_dir=self.pseudo_dir)
-        return Espresso(
+        kw = dict(
             profile=profile,
             pseudopotentials=self.pseudopotentials,
-            input_data=self._build_input_data(functional=functional),
+            input_data=self._build_input_data(functional=functional, relax_cell=relax_cell),
             kpts=tuple(self.kpts),
         )
+        if directory is not None:
+            kw["directory"] = directory
+        return Espresso(**kw)
 
     # ------------------------------------------------------------------
     # constraint translation
@@ -249,6 +290,18 @@ class QEBackend(QmBackend):
         structure: StructureCfg,
         constraint: Optional[ConstraintSpec] = None,
     ) -> QmRelaxResult:
+        # Variable-cell branch: structure asks for it AND there's no
+        # internal-coordinate constraint (constrained scans freeze the
+        # strained cell as part of the constraint, atoms-only relax inside).
+        if getattr(structure, "qm_relax_cell", False) and constraint is None:
+            return self._relax_vc(structure)
+        return self._relax_atoms_only(structure, constraint=constraint)
+
+    def _relax_atoms_only(
+        self,
+        structure: StructureCfg,
+        constraint: Optional[ConstraintSpec] = None,
+    ) -> QmRelaxResult:
         from ase.optimize import BFGS
 
         atoms = self._to_ase(structure)
@@ -258,7 +311,6 @@ class QEBackend(QmBackend):
         BFGS(atoms, logfile=None).run(fmax=0.025)   # 0.025 eV/Å ≈ 0.5 kcal/mol/Å
         e_ev = float(atoms.get_potential_energy())
 
-        # Pull relaxed coords back into a StructureCfg.
         coords = atoms.get_positions()
         new_atoms = [
             orig.model_copy(update={
@@ -268,7 +320,110 @@ class QEBackend(QmBackend):
             })
             for i, orig in enumerate(structure.atoms)
         ]
-        new_structure = structure.model_copy(update={"atoms": new_atoms, "qm_relax": False})
+        new_structure = structure.model_copy(update={
+            "atoms": new_atoms,
+            "qm_relax": False,
+            "qm_relax_cell": False,
+        })
+        return QmRelaxResult(
+            structure=new_structure,
+            energy_kcal_mol=e_ev * _EV_TO_KCAL,
+        )
+
+    @staticmethod
+    def _read_qe_tail(workdir: Path, *, n: int = 80) -> str:
+        """Concatenate the last n lines of QE's stdout / stderr files."""
+        chunks: List[str] = []
+        for fname in ("espresso.pwo", "espresso.err"):
+            p = workdir / fname
+            if not p.exists() or p.stat().st_size == 0:
+                continue
+            try:
+                lines = p.read_text(errors="replace").splitlines()
+            except Exception:
+                continue
+            chunks.append(f"\n----- {fname} (last {n} lines) -----")
+            chunks.extend(lines[-n:])
+        return "\n".join(chunks) if chunks else "(no QE output captured)"
+
+    def _relax_vc(self, structure: StructureCfg) -> QmRelaxResult:
+        """Variable-cell relax via QE's native `calculation: vc-relax`.
+
+        ASE's `BFGS + ExpCellFilter` would fight Pulay stress (the
+        plane-wave basis is fixed at the input cell). QE does it right:
+        with `cell_factor: 2.0` the basis tolerates the cell changing
+        during the internal BFGS without going stale.
+
+        ASE's calculator returns the final SCF energy but doesn't
+        update the atoms object's positions/cell on a vc-relax. We
+        read the last image of the QE trajectory file explicitly.
+
+        On QE failure we preserve the work directory and embed the
+        tail of `espresso.pwo` / `espresso.err` in the raised
+        exception — without this, ASE's `subprocess.CalledProcessError`
+        only reports the exit code and the temp dir is gone.
+        """
+        import shutil
+        import subprocess
+        import tempfile
+        from ase.io import read as ase_read
+
+        atoms = self._to_ase(structure)
+        workdir = Path(tempfile.mkdtemp(prefix="qe_vcrelax_"))
+        try:
+            atoms.calc = self._make_calculator(
+                atoms,
+                functional=self._effective_functional(structure),
+                relax_cell=True,
+                directory=str(workdir),
+            )
+            try:
+                e_ev = float(atoms.get_potential_energy())   # triggers pw.x; QE drives BFGS internally
+            except subprocess.CalledProcessError as e:
+                tail = self._read_qe_tail(workdir, n=80)
+                keep = Path(tempfile.gettempdir()) / f"qe_vcrelax_failed_{workdir.name}"
+                shutil.move(str(workdir), str(keep))
+                workdir = None  # so the finally-clause doesn't try to delete it
+                raise RuntimeError(
+                    f"QE vc-relax failed (exit {e.returncode}). "
+                    f"Inputs/outputs preserved at: {keep}\n{tail}"
+                ) from e
+            out = workdir / "espresso.pwo"
+            final = ase_read(str(out), index=-1)
+        finally:
+            if workdir is not None:
+                shutil.rmtree(workdir, ignore_errors=True)
+
+        coords = final.get_positions()
+        cell = np.asarray(final.get_cell().array, dtype=float)
+        # The StructureCfg schema only carries `box: [a, b, c]` (orthorhombic).
+        # If QE relaxed into a non-orthorhombic cell, surface that loudly
+        # rather than silently dropping the off-diagonal terms.
+        off = cell - np.diag(np.diag(cell))
+        if not np.allclose(off, 0.0, atol=1e-4):
+            raise RuntimeError(
+                "QE vc-relax produced a non-orthorhombic cell:\n"
+                f"{cell}\n"
+                "The current StructureCfg.box schema is `[a, b, c]` only. "
+                "Constrain `cell_dofree` (e.g. 'volume' or 'shape') in the "
+                "QE input, or extend the schema to a full 3×3 lattice."
+            )
+        new_box = (float(cell[0, 0]), float(cell[1, 1]), float(cell[2, 2]))
+
+        new_atoms = [
+            orig.model_copy(update={
+                "x": float(coords[i, 0]),
+                "y": float(coords[i, 1]),
+                "z": float(coords[i, 2]),
+            })
+            for i, orig in enumerate(structure.atoms)
+        ]
+        new_structure = structure.model_copy(update={
+            "atoms": new_atoms,
+            "box": new_box,
+            "qm_relax": False,
+            "qm_relax_cell": False,
+        })
         return QmRelaxResult(
             structure=new_structure,
             energy_kcal_mol=e_ev * _EV_TO_KCAL,

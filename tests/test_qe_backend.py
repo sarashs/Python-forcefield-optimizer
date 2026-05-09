@@ -137,6 +137,36 @@ def test_qe_input_dft_translation():
     assert _qe_input_dft("pz") == "PZ"
 
 
+def test_input_data_vc_relax_keywords(qm_cfg):
+    """With relax_cell=True the input dict must switch to QE's
+    `vc-relax` calculation and add the &IONS / &CELL namelists plus
+    cell_factor — that combination is what makes the variable-cell
+    relax robust against Pulay stress."""
+    from pyfield.qm.qe_backend import QEBackend
+    backend = QEBackend(qm_cfg)
+    d = backend._build_input_data(relax_cell=True)
+    assert d["control"]["calculation"] == "vc-relax"
+    assert "forc_conv_thr" in d["control"]
+    assert "etot_conv_thr" in d["control"]
+    # cell_factor must live in &CELL, not &SYSTEM — QE 6.4.x rejects
+    # it from &SYSTEM with "bad line in namelist &system".
+    assert "cell_factor" not in d["system"]
+    assert d["cell"]["cell_factor"] == 2.0
+    assert d["ions"]["ion_dynamics"] == "bfgs"
+    assert d["cell"]["cell_dynamics"] == "bfgs"
+    assert "press_conv_thr" in d["cell"]
+
+
+def test_input_data_default_is_scf(qm_cfg):
+    """Sanity check: with relax_cell unset, the calculation type
+    stays at `scf` (atoms-only / single-point path)."""
+    from pyfield.qm.qe_backend import QEBackend
+    d = QEBackend(qm_cfg)._build_input_data()
+    assert d["control"]["calculation"] == "scf"
+    assert "ions" not in d
+    assert "cell" not in d
+
+
 def test_input_data_spin_polarized(pseudo_dir):
     cfg = QmCfg.model_validate({
         "code": "qe", "functional": "pbe", "basis": "pw",
@@ -296,6 +326,37 @@ def test_structure_code_override():
     ])
     assert structure_code(s_default, fallback="pyscf") == "pyscf"
     assert structure_code(s_qe, fallback="pyscf") == "qe"
+
+
+def test_relax_dispatch_on_qm_relax_cell():
+    """The relax() top-level dispatcher must route to the vc path
+    only when both qm_relax_cell=True AND constraint is None.
+    Constrained scan points keep the strained cell fixed and must
+    fall through to atoms-only relax even if the flag is set."""
+    from pyfield.qm.qe_backend import QEBackend
+    sentinel_atoms = object()
+    sentinel_vc = object()
+    s_atoms_only = StructureCfg(box=(5, 5, 5), pbc=True, atoms=[
+        AtomCfg(element="Si", x=0, y=0, z=0),
+    ])
+    s_vc = StructureCfg(box=(5, 5, 5), pbc=True, qm_relax_cell=True, atoms=[
+        AtomCfg(element="Si", x=0, y=0, z=0),
+    ])
+
+    class _Stub(QEBackend):
+        def __init__(self): pass
+        def _relax_atoms_only(self, structure, constraint=None):
+            return sentinel_atoms
+        def _relax_vc(self, structure):
+            return sentinel_vc
+
+    stub = _Stub()
+    assert stub.relax(s_atoms_only) is sentinel_atoms
+    assert stub.relax(s_vc) is sentinel_vc
+    # qm_relax_cell + constraint → atoms-only branch (constraint wins)
+    assert stub.relax(s_vc, constraint=ConstraintSpec(
+        kind="distance", atoms=[1, 2], value=2.0,
+    )) is sentinel_atoms
 
 
 def test_cache_key_includes_qm_code():

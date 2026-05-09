@@ -59,6 +59,14 @@ class StructureCfg(BaseModel):
     # configured QM backend and writes the relaxed coordinates back into
     # `atoms:` of the populated YAML (the flag itself is removed).
     qm_relax: bool = False
+    # When True (PBC structures only), the QM relax also varies the cell
+    # vectors — i.e. QE's `calculation: vc-relax`. The relaxed box gets
+    # written back into `box:` of the populated YAML alongside the
+    # relaxed atomic coordinates. Skipped on cluster structures
+    # (`pbc: false`) since their box is just vacuum padding, and on
+    # constrained scan points (the strained cell is the constraint).
+    # Implies `qm_relax: true`.
+    qm_relax_cell: bool = False
     # When True, `box` is treated as orthorhombic lattice vectors and
     # the QM backend runs a periodic calculation (PBC with Γ-only k
     # point in v1). When False, `box` is just a non-interacting
@@ -69,6 +77,18 @@ class StructureCfg(BaseModel):
     def _exactly_one_source(self) -> "StructureCfg":
         if (self.atoms is None) == (self.path is None):
             raise ValueError("StructureCfg requires exactly one of `atoms` or `path`.")
+        return self
+
+    @model_validator(mode="after")
+    def _vc_relax_consistency(self) -> "StructureCfg":
+        if self.qm_relax_cell and not self.pbc:
+            raise ValueError(
+                "qm_relax_cell: true requires pbc: true — variable-cell relax "
+                "is only meaningful for periodic structures."
+            )
+        if self.qm_relax_cell and not self.qm_relax:
+            # Auto-imply rather than error: vc-relax includes atomic relax.
+            object.__setattr__(self, "qm_relax", True)
         return self
 
 
