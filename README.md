@@ -140,8 +140,21 @@ kpts=[2,2,2]` takes ~15 min per BFGS step, which compounds badly with
 the 25–30 step relaxes typical for our scan points. With MPI:
 
 ```bash
-export ESPRESSO_COMMAND="mpirun -np 8 pw.x -in PREFIX.pwi > PREFIX.pwo"
+export ESPRESSO_COMMAND='/usr/bin/mpirun.openmpi -np 8 pw.x'
 ```
+
+The env var is **just the launcher prefix**. ASE 3.23+'s
+`EspressoProfile` appends `-in espresso.pwi` and captures
+stdout/stderr itself — older docs that include `-in PREFIX.pwi >
+PREFIX.pwo` are wrong for the modern Profile API and would be passed
+as literal argv to `mpirun`.
+
+Use the **system** OpenMPI launcher (`/usr/bin/mpirun.openmpi`)
+explicitly: `pw.x` from `apt install quantum-espresso` is linked
+against system OpenMPI (`libmpi.so.40`), and a venv-installed
+`mpirun` is often MPICH/Hydra — ABI mismatch would either error or
+fork N independent serial processes (no parallelism). Verify with
+`ldd $(which pw.x) | grep mpi`.
 
 Pick `-np` to match your physical core count (not hyperthreads). On
 8 cores you'll typically see 5–7× speedup over single-core. ASE picks

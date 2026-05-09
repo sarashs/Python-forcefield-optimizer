@@ -318,9 +318,22 @@ construction.
 
 ```bash
 # In the shell that launches python / jupyter:
-export ESPRESSO_COMMAND="mpirun -np 8 pw.x -in PREFIX.pwi > PREFIX.pwo"
+export ESPRESSO_COMMAND='/usr/bin/mpirun.openmpi -np 8 pw.x'
 jupyter lab    # or python …
 ```
+
+ASE 3.23+'s `EspressoProfile` appends `-in espresso.pwi` itself and
+captures stdout/stderr — the env var is **just the launcher prefix**
+(no `-in PREFIX.pwi`, no `> PREFIX.pwo`; older ASE docs that include
+those will be passed as literal argv to mpirun and break).
+
+Use the **system** OpenMPI launcher (`/usr/bin/mpirun.openmpi`)
+explicitly: `pw.x` from `apt install quantum-espresso` links against
+`/lib/x86_64-linux-gnu/libmpi.so.40` (OpenMPI), and a venv-installed
+`mpirun` is often MPICH/Hydra — incompatible ABIs would either error
+out or fork N independent serial processes (no parallelism). `ldd $(which pw.x) | grep mpi`
+tells you which MPI flavour QE is linked against, and the `mpirun`
+ABI must match.
 
 Pick `-np` to match physical cores (not hyperthreads). On 8 cores the
 typical speedup is 5–7× over single-core. Without this env var, ASE
