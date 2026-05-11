@@ -53,11 +53,23 @@ def main() -> None:
     final = ase_read(args.pwo, index=-1)
     e_ev = float(final.get_potential_energy())
     cell = np.asarray(final.get_cell().array, dtype=float)
+    # Mirror the tolerance in pyfield.qm.qe_backend._relax_vc:
+    # off-diagonals < 5 % of axis length → project to diagonal with
+    # a warning; ≥ 5 % → refuse (the diagonal would mis-describe the
+    # cell). 5 % is the regime where "essentially orthorhombic plus
+    # noise from a `cell_dofree: 'all'` run on a low-symmetry input"
+    # is faithfully summarised by [a, b, c].
     off = cell - np.diag(np.diag(cell))
-    if not np.allclose(off, 0.0, atol=1e-4):
+    diag = np.abs(np.diag(cell))
+    rel_shear = float(np.max(np.abs(off) / diag.max()))
+    if rel_shear >= 0.05:
         raise SystemExit(
-            f"non-orthorhombic relaxed cell — schema box: [a, b, c] won't carry it:\n{cell}"
+            f"non-orthorhombic relaxed cell (max shear {rel_shear:.1%}) — "
+            f"schema box: [a, b, c] won't carry it faithfully:\n{cell}"
         )
+    if rel_shear > 1e-4:
+        print(f"warning: relaxed cell has {rel_shear:.1%} shear; "
+              "projecting to box diagonal.")
     new_box = (float(cell[0, 0]), float(cell[1, 1]), float(cell[2, 2]))
     coords = final.get_positions()
 

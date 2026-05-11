@@ -439,16 +439,37 @@ class QEBackend(QmBackend):
         coords = final.get_positions()
         cell = np.asarray(final.get_cell().array, dtype=float)
         # The StructureCfg schema only carries `box: [a, b, c]` (orthorhombic).
-        # If QE relaxed into a non-orthorhombic cell, surface that loudly
-        # rather than silently dropping the off-diagonal terms.
+        # Two regimes for what we do with QE's relaxed cell:
+        # - off-diagonals < 5 % of axis length: project to the diagonal
+        #   with a RuntimeWarning. This is the realistic "noisy near-
+        #   orthorhombic" case that pops up with `cell_dofree: 'all'`
+        #   on low-symmetry inputs (disordered cation sublattices etc.)
+        #   — schema can't carry the shear, but it's small enough that
+        #   the diagonal is a faithful summary of the relaxed cell.
+        # - off-diagonals ≥ 5 %: raise. The cell is meaningfully sheared
+        #   (e.g. Peierls-distorted) and the diagonal would mis-describe
+        #   it. User should re-run with `cell_dofree: 'xyz'` (our
+        #   current default) or extend the schema to a 3×3 lattice.
         off = cell - np.diag(np.diag(cell))
-        if not np.allclose(off, 0.0, atol=1e-4):
+        diag = np.abs(np.diag(cell))
+        rel_shear = np.max(np.abs(off) / diag.max())
+        if rel_shear >= 0.05:
             raise RuntimeError(
-                "QE vc-relax produced a non-orthorhombic cell:\n"
-                f"{cell}\n"
+                "QE vc-relax produced a strongly non-orthorhombic cell "
+                f"(max |off-diagonal| / |axis| = {rel_shear:.1%}):\n{cell}\n"
                 "The current StructureCfg.box schema is `[a, b, c]` only. "
-                "Constrain `cell_dofree` (e.g. 'volume' or 'shape') in the "
-                "QE input, or extend the schema to a full 3×3 lattice."
+                "Re-run with `cell_dofree: 'xyz'` in the QE input "
+                "(the new default), or extend the schema to a full "
+                "3×3 lattice."
+            )
+        if rel_shear > 1e-4:
+            import warnings
+            warnings.warn(
+                f"QE vc-relax cell has {rel_shear:.1%} shear; projecting "
+                "to the diagonal `box: [a, b, c]` (the schema doesn't "
+                "carry off-diagonal cell terms). Diagonal is a faithful "
+                "summary at this magnitude of shear.",
+                RuntimeWarning,
             )
         new_box = (float(cell[0, 0]), float(cell[1, 1]), float(cell[2, 2]))
 
