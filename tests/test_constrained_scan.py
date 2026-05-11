@@ -271,6 +271,47 @@ def test_strain_scan_emits_minimize_without_restraints():
         assert not extras.get("restraints")
 
 
+def test_strain_scan_strips_qm_relax_cell_from_scan_points():
+    """A reference with `qm_relax_cell: true` (vc-relax flag) must never
+    propagate that flag onto its perturbed scan points — their cell is
+    the constraint, and a vc-relax would obliterate the perturbation.
+    Regression for the bug where 19 strain points all inherited
+    qm_relax_cell=True and `populate_qm` queued up 19 vc-relaxes."""
+    cfg = PyFieldConfig.model_validate({
+        "forcefield": {"path": "ff.reax", "params": "params"},
+        "qm": {"code": "pyscf"},
+        "structures": {
+            "X": {
+                "box": [10, 10, 10], "pbc": True,
+                "qm_relax": True,
+                "qm_relax_cell": True,            # <-- the trap
+                "atoms": [
+                    {"element": "C", "x": 0.0, "y": 0.0, "z": 0.0},
+                    {"element": "C", "x": 5.0, "y": 5.0, "z": 5.0},
+                ],
+            },
+        },
+        "simulations": {},
+        "targets": [],
+        "scans": [{
+            "type": "strain", "reference": "X", "name_prefix": "X_eos",
+            "mode": "hydrostatic",
+            "values": [-0.04, 0.0, 0.04],
+            "relax_method": "relaxed_constrained",
+        }],
+    })
+    expanded, _ = expand_scans(cfg)
+    for i in range(3):
+        s = expanded.structures[f"X_eos_{i}"]
+        # qm_relax stays True (constrained atoms-only relax inside the
+        # strained cell) but qm_relax_cell MUST be stripped to False.
+        assert s.qm_relax is True
+        assert s.qm_relax_cell is False, (
+            f"X_eos_{i} inherited qm_relax_cell from reference — would "
+            "trigger vc-relax in populate_qm"
+        )
+
+
 def test_strain_scan_box_actually_changes():
     cfg = PyFieldConfig.model_validate({
         "forcefield": {"path": "ff.reax", "params": "params"},

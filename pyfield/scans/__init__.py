@@ -215,11 +215,21 @@ def expand_scans(
                 )
 
             new_struct = _apply(scan, ref_struct, value)
-            if new_struct.qm_relax:
-                # Don't re-relax scan points unconditionally — qm_relax
-                # makes sense on the reference, not on perturbed copies
-                # whose whole point is to sample off-equilibrium geometry.
-                new_struct = new_struct.model_copy(update={"qm_relax": False})
+            # Scan points must NEVER inherit a vc-relax flag — their cell
+            # (for strain) or one internal coord (for bond/angle scans)
+            # is the constraint, so re-relaxing the cell would obliterate
+            # the perturbation. Strip qm_relax_cell unconditionally even
+            # when qm_relax is already False, in case the reference still
+            # carries it (e.g. cache hit from an older code path that
+            # didn't strip the flag, or a user running make-scan on the
+            # raw cfg without going through qm-relax first).
+            #
+            # qm_relax itself is also stripped here; the strain / scan
+            # type branches below may re-set it to True with a constraint.
+            new_struct = new_struct.model_copy(update={
+                "qm_relax": False,
+                "qm_relax_cell": False,
+            })
 
             constraint = _constraint_spec(scan, value)
             if constraint is not None:
