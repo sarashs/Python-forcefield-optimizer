@@ -271,7 +271,8 @@ def test_single_point_converts_units(qm_cfg, monkeypatch):
     backend = qe_backend.QEBackend(qm_cfg)
 
     fake = _FakeCalc(energy_ev=-2.5)
-    monkeypatch.setattr(backend, "_make_calculator", lambda atoms, functional=None: fake)
+    monkeypatch.setattr(backend, "_make_calculator",
+                        lambda atoms, functional=None, directory=None: fake)
 
     s = _periodic_struct()
     sp = backend.single_point(s)

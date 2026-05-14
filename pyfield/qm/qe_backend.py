@@ -32,6 +32,7 @@ target separation before running BFGS — `FixBondLengths` keeps a bond
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import math
 import os
@@ -109,6 +110,17 @@ class QEBackend(QmBackend):
         # parameters explicitly so behaviour is reproducible regardless
         # of environment.
         self.command = extras.get("command", os.environ.get("ESPRESSO_COMMAND"))
+
+        # Optional persistent log/work directory. When set (by the
+        # populator), every QE call writes its input/output files to a
+        # stable, predictable subdirectory of `log_dir` instead of a
+        # tempfile, and the directory survives the call regardless of
+        # exit status. `run_label` is a short name (typically
+        # "<op>_<structure>") that the populator updates before each
+        # call so the workdir is recognisable from the outside while a
+        # long run is in progress.
+        self.log_dir: Optional[Path] = None
+        self.run_label: Optional[str] = None
 
     # ------------------------------------------------------------------
     # ASE plumbing
@@ -285,14 +297,24 @@ class QEBackend(QmBackend):
     # ------------------------------------------------------------------
 
     def single_point(self, structure: StructureCfg) -> QmSinglePoint:
+        import shutil
         atoms = self._to_ase(structure)
-        atoms.calc = self._make_calculator(atoms, functional=self._effective_functional(structure))
-        e_ev = float(atoms.get_potential_energy())
+        workdir, persistent = self._resolve_workdir("sp")
         try:
-            f_ev = np.asarray(atoms.get_forces(), dtype=float)
-            forces = f_ev * _EV_PER_A_TO_KCAL_PER_A
-        except Exception:
-            forces = None
+            atoms.calc = self._make_calculator(
+                atoms,
+                functional=self._effective_functional(structure),
+                directory=str(workdir),
+            )
+            e_ev = float(atoms.get_potential_energy())
+            try:
+                f_ev = np.asarray(atoms.get_forces(), dtype=float)
+                forces = f_ev * _EV_PER_A_TO_KCAL_PER_A
+            except Exception:
+                forces = None
+        finally:
+            if not persistent:
+                shutil.rmtree(workdir, ignore_errors=True)
         return QmSinglePoint(
             energy_kcal_mol=e_ev * _EV_TO_KCAL,
             forces_kcal_mol_per_A=forces,
@@ -315,14 +337,26 @@ class QEBackend(QmBackend):
         structure: StructureCfg,
         constraint: Optional[ConstraintSpec] = None,
     ) -> QmRelaxResult:
+        import shutil
         from ase.optimize import BFGS
 
         atoms = self._to_ase(structure)
-        atoms.calc = self._make_calculator(atoms, functional=self._effective_functional(structure))
-        if constraint is not None:
-            self._apply_constraint(atoms, constraint)
-        BFGS(atoms, logfile=None).run(fmax=0.025)   # 0.025 eV/Å ≈ 0.5 kcal/mol/Å
-        e_ev = float(atoms.get_potential_energy())
+        op = "relax_constrained" if constraint is not None else "relax"
+        workdir, persistent = self._resolve_workdir(op)
+        try:
+            atoms.calc = self._make_calculator(
+                atoms,
+                functional=self._effective_functional(structure),
+                directory=str(workdir),
+            )
+            if constraint is not None:
+                self._apply_constraint(atoms, constraint)
+            bfgs_log = str(workdir / "bfgs.log") if persistent else None
+            BFGS(atoms, logfile=bfgs_log).run(fmax=0.025)   # 0.025 eV/Å ≈ 0.5 kcal/mol/Å
+            e_ev = float(atoms.get_potential_energy())
+        finally:
+            if not persistent:
+                shutil.rmtree(workdir, ignore_errors=True)
 
         coords = atoms.get_positions()
         new_atoms = [
@@ -342,6 +376,29 @@ class QEBackend(QmBackend):
             structure=new_structure,
             energy_kcal_mol=e_ev * _EV_TO_KCAL,
         )
+
+    def _resolve_workdir(self, op: str) -> Tuple[Path, bool]:
+        """Return `(workdir, persistent)` for one QE call.
+
+        `persistent=True` means the populator wired a `log_dir` and we
+        should keep the directory after the call so the user can `tail
+        -f` live runs and post-mortem on failures. `persistent=False` is
+        the original tempfile path used for unit tests and ad-hoc
+        backend instantiation, where the directory is deleted on
+        success.
+
+        The timestamp suffix means re-runs (e.g. `force=True`) don't
+        clobber each other — each call gets a fresh subdir and the
+        previous one stays around for inspection.
+        """
+        if self.log_dir is None:
+            import tempfile
+            return Path(tempfile.mkdtemp(prefix=f"qe_{op}_")), False
+        label = self.run_label or "anon"
+        ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        wd = Path(self.log_dir) / f"{label}_{ts}"
+        wd.mkdir(parents=True, exist_ok=True)
+        return wd, True
 
     @staticmethod
     def _read_qe_tail(workdir: Path, *, n: int = 80) -> str:
@@ -382,7 +439,7 @@ class QEBackend(QmBackend):
         from ase.io import read as ase_read
 
         atoms = self._to_ase(structure)
-        workdir = Path(tempfile.mkdtemp(prefix="qe_vcrelax_"))
+        workdir, persistent = self._resolve_workdir("vcrelax")
         try:
             atoms.calc = self._make_calculator(
                 atoms,
@@ -423,17 +480,25 @@ class QEBackend(QmBackend):
                         e_ev = float(final_tmp.get_potential_energy())
                 else:
                     tail = self._read_qe_tail(workdir, n=80)
-                    keep = Path(tempfile.gettempdir()) / f"qe_vcrelax_failed_{workdir.name}"
-                    shutil.move(str(workdir), str(keep))
-                    workdir = None
+                    if persistent:
+                        # Already in a stable location — don't move it,
+                        # just raise pointing at it.
+                        kept = workdir
+                    else:
+                        kept = Path(tempfile.gettempdir()) / f"qe_vcrelax_failed_{workdir.name}"
+                        shutil.move(str(workdir), str(kept))
+                        workdir = None
                     raise RuntimeError(
                         f"QE vc-relax failed (exit {e.returncode}). "
-                        f"Inputs/outputs preserved at: {keep}\n{tail}"
+                        f"Inputs/outputs preserved at: {kept}\n{tail}"
                     ) from e
             out = workdir / "espresso.pwo"
             final = ase_read(str(out), index=-1)
         finally:
-            if workdir is not None:
+            # Only clean up tempfile-mode workdirs on success. Persistent
+            # ones (set by the populator) stay behind so the user can
+            # `tail -f espresso.pwo` after the fact and audit the run.
+            if workdir is not None and not persistent:
                 shutil.rmtree(workdir, ignore_errors=True)
 
         coords = final.get_positions()
