@@ -38,3 +38,14 @@ studies/gst_drift/gst_drift.scanned.yaml
 studies/gst_drift/gst_drift.populated.yaml
 studies/*/runs/
 studies/*/cost_trace.png
+*.yaml.bak
+
+# Stray QE scratch at the repo root (pre-dates the persistent-workdir
+# refactor in qe_backend.py — new runs land under runs/qe_logs/)
+/espresso.pwi
+/espresso.pwo
+/espresso.err
+/tmp/
+
+# Local Claude Code project state (transcripts, plans, settings)
+.claude/
