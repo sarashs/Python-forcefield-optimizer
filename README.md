@@ -140,8 +140,17 @@ kpts=[2,2,2]` takes ~15 min per BFGS step, which compounds badly with
 the 25–30 step relaxes typical for our scan points. With MPI:
 
 ```bash
-export ESPRESSO_COMMAND='/usr/bin/mpirun.openmpi -np 8 pw.x'
+export ESPRESSO_COMMAND='/usr/bin/mpirun.openmpi -np {nproc} pw.x'
 ```
+
+The `{nproc}` placeholder is substituted by `pyfield.qm.qe_backend`
+at backend construction with the CPU count *actually available to
+the Python process* — `len(os.sched_getaffinity(0))`, which respects
+cgroup / SLURM / taskset limits, not just the host total. So the same
+exported string works on an 8-core laptop and a 64-core node without
+re-editing, and works correctly inside a SLURM allocation. (Plain
+`-np 8` still works if you'd rather pin the rank count; the
+placeholder is opt-in.)
 
 The env var is **just the launcher prefix**. ASE 3.23+'s
 `EspressoProfile` appends `-in espresso.pwi` and captures
@@ -156,9 +165,10 @@ against system OpenMPI (`libmpi.so.40`), and a venv-installed
 fork N independent serial processes (no parallelism). Verify with
 `ldd $(which pw.x) | grep mpi`.
 
-Pick `-np` to match your physical core count (not hyperthreads). On
-8 cores you'll typically see 5–7× speedup over single-core. ASE picks
-up `ESPRESSO_COMMAND` automatically.
+On 8 cores you'll typically see 5–7× speedup over single-core; on
+64 cores expect ~30–40× on bulk relaxes (parallel efficiency drops
+past the 8-fold-PW-then-k-point regime). ASE picks up
+`ESPRESSO_COMMAND` automatically.
 
 > ⚠️ **Set this before launching `python` or `jupyter`.** ASE
 > snapshots the env var when the `EspressoProfile` is constructed.

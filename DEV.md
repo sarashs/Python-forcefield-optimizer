@@ -318,9 +318,18 @@ construction.
 
 ```bash
 # In the shell that launches python / jupyter:
-export ESPRESSO_COMMAND='/usr/bin/mpirun.openmpi -np 8 pw.x'
+export ESPRESSO_COMMAND='/usr/bin/mpirun.openmpi -np {nproc} pw.x'
 jupyter lab    # or python …
 ```
+
+The `{nproc}` token is substituted by `QEBackend.__init__` (see
+`pyfield/qm/qe_backend.py`, `_detect_cpus`) with the number of CPUs
+actually available to the Python process — `len(os.sched_getaffinity(0))`,
+which respects cgroup / SLURM / taskset restrictions. On a bare-metal
+8-core laptop you get `-np 8`; on a 64-core node `-np 64`; on a
+SLURM allocation with `--cpus-per-task=16` you get `-np 16`. Same
+exported command works everywhere without re-editing for the host's
+core count. A literal `-np 8` still works if you'd rather pin.
 
 ASE 3.23+'s `EspressoProfile` appends `-in espresso.pwi` itself and
 captures stdout/stderr — the env var is **just the launcher prefix**
@@ -335,10 +344,8 @@ out or fork N independent serial processes (no parallelism). `ldd $(which pw.x) 
 tells you which MPI flavour QE is linked against, and the `mpirun`
 ABI must match.
 
-Pick `-np` to match physical cores (not hyperthreads). On 8 cores the
-typical speedup is 5–7× over single-core. Without this env var, ASE
-falls back to plain `pw.x` (single-core) — runs still complete on
-small cells but compound badly across a scan.
+Without this env var, ASE falls back to plain `pw.x` (single-core) —
+runs still complete on small cells but compound badly across a scan.
 
 To verify what the running kernel sees:
 

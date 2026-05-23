@@ -55,6 +55,24 @@ _EV_TO_KCAL = 23.06054783    # NIST 2019 conversion
 _EV_PER_A_TO_KCAL_PER_A = _EV_TO_KCAL
 
 
+def _detect_cpus() -> int:
+    """Return the CPU count actually available to *this process*.
+
+    `os.sched_getaffinity(0)` respects cgroup / SLURM / taskset
+    restrictions and is the right number to feed to `mpirun -np`. On a
+    bare-metal box it equals `os.cpu_count()`; in a SLURM allocation
+    it's the allocated subset, which is what we want.
+
+    Falls back to `os.cpu_count()` on platforms without
+    `sched_getaffinity` (macOS, Windows). Final fallback is 1 so the
+    substituted command is always a valid integer.
+    """
+    try:
+        return len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        return os.cpu_count() or 1
+
+
 def _qe_input_dft(name: str) -> str:
     """Map a friendly functional name to QE's `input_dft` keyword."""
     return {
@@ -109,7 +127,18 @@ class QEBackend(QmBackend):
         # ASE looks for `pw.x` via `ESPRESSO_COMMAND`. We pass the
         # parameters explicitly so behaviour is reproducible regardless
         # of environment.
-        self.command = extras.get("command", os.environ.get("ESPRESSO_COMMAND"))
+        #
+        # `{nproc}` in the command string is substituted with the
+        # number of CPUs available to *this process* (respecting
+        # cgroup / SLURM affinity, not just the host total). Lets the
+        # same `ESPRESSO_COMMAND` work on an 8-core laptop and a
+        # 64-core node without re-editing — set e.g.
+        #     export ESPRESSO_COMMAND='/usr/bin/mpirun.openmpi -np {nproc} pw.x'
+        # and pw.x gets the right rank count on each machine.
+        cmd = extras.get("command", os.environ.get("ESPRESSO_COMMAND"))
+        if cmd and "{nproc}" in cmd:
+            cmd = cmd.replace("{nproc}", str(_detect_cpus()))
+        self.command = cmd
 
         # Optional persistent log/work directory. When set (by the
         # populator), every QE call writes its input/output files to a
