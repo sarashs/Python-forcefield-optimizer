@@ -272,7 +272,7 @@ def test_single_point_converts_units(qm_cfg, monkeypatch):
 
     fake = _FakeCalc(energy_ev=-2.5)
     monkeypatch.setattr(backend, "_make_calculator",
-                        lambda atoms, functional=None, directory=None: fake)
+                        lambda atoms, functional=None, directory=None, structure=None: fake)
 
     s = _periodic_struct()
     sp = backend.single_point(s)
@@ -403,3 +403,103 @@ def test_cache_key_includes_qm_code():
         AtomCfg(element="Si", x=0, y=0, z=0),
     ])
     assert _key(s_pyscf, "fp", "single_point") != _key(s_qe, "fp", "single_point")
+
+
+# ---------------------------------------------------------------------------
+# _choose_procs / {nproc} substitution
+# ---------------------------------------------------------------------------
+
+def _make_qm(pseudo_dir, **overrides):
+    """Build a QmCfg with the given overrides, for tests that need to
+    vary kpts / max_processes / etc independently of the shared
+    fixture."""
+    from pyfield.config.schema import QmCfg
+    base = {
+        "code": "qe", "functional": "pbe",
+        "pseudo_dir": str(pseudo_dir),
+        "pseudopotentials": {"Si": "Si.upf"},
+    }
+    base.update(overrides)
+    return QmCfg.model_validate(base)
+
+
+def test_choose_procs_caps_at_size_heuristic(pseudo_dir, monkeypatch):
+    """A small Γ-only cell shouldn't be given the whole node's worth of
+    MPI ranks even when the box has 64 cores available."""
+    from pyfield.qm import qe_backend
+    monkeypatch.setattr(qe_backend, "_detect_cpus", lambda: 64)
+    qm = _make_qm(pseudo_dir, kpts=[1, 1, 1])
+    backend = qe_backend.QEBackend(qm)
+    s = StructureCfg(box=(5, 5, 5), pbc=True, atoms=[
+        AtomCfg(element="Si", x=0, y=0, z=0),
+        AtomCfg(element="Si", x=2, y=0, z=0),
+    ])
+    # heuristic = 2 × 2 atoms × 1 kpt = 4 → not 64
+    assert backend._choose_procs(s) == 4
+
+
+def test_choose_procs_uses_heuristic_with_kpoints(pseudo_dir, monkeypatch):
+    """Bigger cells with k-point grids scale the rank ceiling up — but
+    only as far as the system's available cores."""
+    from pyfield.qm import qe_backend
+    monkeypatch.setattr(qe_backend, "_detect_cpus", lambda: 64)
+    qm = _make_qm(pseudo_dir, kpts=[2, 2, 2])
+    backend = qe_backend.QEBackend(qm)
+    # heuristic = 2 × 18 atoms × 8 kpts = 288, available=64 → 64
+    s = StructureCfg(box=(8, 8, 8), pbc=True, atoms=[
+        AtomCfg(element="Si", x=i*0.1, y=0, z=0) for i in range(18)
+    ])
+    assert backend._choose_procs(s) == 64
+
+
+def test_choose_procs_respects_per_structure_cap(pseudo_dir, monkeypatch):
+    """`qm_max_procs` on the structure pins below the heuristic."""
+    from pyfield.qm import qe_backend
+    monkeypatch.setattr(qe_backend, "_detect_cpus", lambda: 64)
+    qm = _make_qm(pseudo_dir, kpts=[1, 1, 1])
+    backend = qe_backend.QEBackend(qm)
+    s = StructureCfg.model_validate({
+        "box": (8, 8, 8), "pbc": True, "qm_max_procs": 4,
+        "atoms": [{"element": "Si", "x": i*0.1, "y": 0, "z": 0} for i in range(18)],
+    })
+    # heuristic alone (kpts=Γ) would suggest 36, but per-structure cap wins
+    assert backend._choose_procs(s) == 4
+
+
+def test_choose_procs_respects_global_cap(pseudo_dir, monkeypatch):
+    """`qm.max_processes` caps every call across the backend."""
+    from pyfield.qm import qe_backend
+    monkeypatch.setattr(qe_backend, "_detect_cpus", lambda: 64)
+    qm = _make_qm(pseudo_dir, max_processes=8)
+    backend = qe_backend.QEBackend(qm)
+    s = StructureCfg(box=(8, 8, 8), pbc=True, atoms=[
+        AtomCfg(element="Si", x=i*0.1, y=0, z=0) for i in range(18)
+    ])
+    assert backend._choose_procs(s) == 8
+
+
+def test_resolve_command_substitutes_nproc(pseudo_dir, monkeypatch):
+    """The template form lands the right rank count per call."""
+    from pyfield.qm import qe_backend
+    monkeypatch.setenv("ESPRESSO_COMMAND", "mpirun -np {nproc} pw.x")
+    monkeypatch.setattr(qe_backend, "_detect_cpus", lambda: 64)
+    qm = _make_qm(pseudo_dir, kpts=[1, 1, 1])
+    backend = qe_backend.QEBackend(qm)
+    s_small = StructureCfg(box=(5, 5, 5), pbc=True, atoms=[
+        AtomCfg(element="Si", x=0, y=0, z=0),
+        AtomCfg(element="Si", x=2, y=0, z=0),
+    ])
+    assert backend._resolve_command(s_small) == "mpirun -np 4 pw.x"
+
+
+def test_resolve_command_leaves_literal_np_alone(pseudo_dir, monkeypatch):
+    """If the user pinned `-np 16` literally, no substitution happens."""
+    from pyfield.qm import qe_backend
+    monkeypatch.setenv("ESPRESSO_COMMAND", "mpirun -np 16 pw.x")
+    monkeypatch.setattr(qe_backend, "_detect_cpus", lambda: 64)
+    qm = _make_qm(pseudo_dir, kpts=[1, 1, 1])
+    backend = qe_backend.QEBackend(qm)
+    s = StructureCfg(box=(5, 5, 5), pbc=True, atoms=[
+        AtomCfg(element="Si", x=0, y=0, z=0),
+    ])
+    assert backend._resolve_command(s) == "mpirun -np 16 pw.x"

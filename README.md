@@ -143,14 +143,25 @@ the 25–30 step relaxes typical for our scan points. With MPI:
 export ESPRESSO_COMMAND='/usr/bin/mpirun.openmpi -np {nproc} pw.x'
 ```
 
-The `{nproc}` placeholder is substituted by `pyfield.qm.qe_backend`
-at backend construction with the CPU count *actually available to
-the Python process* — `len(os.sched_getaffinity(0))`, which respects
-cgroup / SLURM / taskset limits, not just the host total. So the same
-exported string works on an 8-core laptop and a 64-core node without
-re-editing, and works correctly inside a SLURM allocation. (Plain
-`-np 8` still works if you'd rather pin the rank count; the
-placeholder is opt-in.)
+The `{nproc}` placeholder is substituted **per QE call** by
+`pyfield.qm.qe_backend._resolve_command`, picking the minimum of:
+
+- `len(os.sched_getaffinity(0))` — CPUs actually available to this
+  process, respecting cgroup / SLURM / taskset, not just host total.
+- A **size heuristic**: `2 × n_atoms × n_kpts`. So a 2-atom Γ-only
+  test cell gets `-np 4`, not the whole node — beyond that ratio
+  MPI comm overhead dwarfs any speedup. An 18-atom 2×2×2-grid GST
+  cell heuristic is 288, so it claims everything the system has up
+  to ~64 ranks.
+- **`qm_max_procs:`** on the structure (per-structure pin) and
+  **`qm.max_processes:`** on the qm block (global cap), both
+  optional. Specific-wins-over-general: per-structure beats global
+  beats heuristic.
+
+Same exported string works on an 8-core laptop and a 64-core node
+without re-editing, and right-sizes per call without you having to
+think about it. Plain `-np 8` still works if you'd rather pin
+explicitly — only the `{nproc}` token is auto-substituted.
 
 The env var is **just the launcher prefix**. ASE 3.23+'s
 `EspressoProfile` appends `-in espresso.pwi` and captures

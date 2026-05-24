@@ -322,14 +322,21 @@ export ESPRESSO_COMMAND='/usr/bin/mpirun.openmpi -np {nproc} pw.x'
 jupyter lab    # or python …
 ```
 
-The `{nproc}` token is substituted by `QEBackend.__init__` (see
-`pyfield/qm/qe_backend.py`, `_detect_cpus`) with the number of CPUs
-actually available to the Python process — `len(os.sched_getaffinity(0))`,
-which respects cgroup / SLURM / taskset restrictions. On a bare-metal
-8-core laptop you get `-np 8`; on a 64-core node `-np 64`; on a
-SLURM allocation with `--cpus-per-task=16` you get `-np 16`. Same
-exported command works everywhere without re-editing for the host's
-core count. A literal `-np 8` still works if you'd rather pin.
+The `{nproc}` token is substituted **per QE call** by
+`QEBackend._resolve_command` (see `pyfield/qm/qe_backend.py`), so a
+small cluster and a bulk supercell get rank counts proportional to
+their work rather than both grabbing the whole node. The minimum of:
+
+- `len(os.sched_getaffinity(0))` (cgroup/SLURM-aware available cores),
+- size heuristic `2 × n_atoms × n_kpts` (rough QE plane-wave /
+  k-point scaling rule — 2 atoms × Γ = 4 ranks, 18 atoms × 2×2×2
+  grid = 288 capped to whatever the system has),
+- `qm_max_procs:` on the structure (per-structure pin in YAML),
+- `qm.max_processes:` on the qm block (global cap).
+
+Both YAML knobs are optional — without them the heuristic + system
+detection do the right thing automatically. A literal `-np 8` (no
+`{nproc}` token) is left untouched.
 
 ASE 3.23+'s `EspressoProfile` appends `-in espresso.pwi` itself and
 captures stdout/stderr — the env var is **just the launcher prefix**

@@ -124,21 +124,24 @@ class QEBackend(QmBackend):
         self.degauss = float(extras.get("degauss", 0.01))    # Ry — Methfessel-Paxton smearing
 
         # ASE Espresso calculator: optional command override, otherwise
-        # ASE looks for `pw.x` via `ESPRESSO_COMMAND`. We pass the
-        # parameters explicitly so behaviour is reproducible regardless
-        # of environment.
+        # ASE looks for `pw.x` via `ESPRESSO_COMMAND`. The command is
+        # stored as a *template*; `{nproc}` (if present) is substituted
+        # per-call from `_choose_procs(structure)` rather than eagerly
+        # at backend init, so a tiny cluster doesn't get the same rank
+        # count as an 18-atom bulk supercell. See `_choose_procs` for
+        # the size heuristic and the per-structure / global caps.
         #
-        # `{nproc}` in the command string is substituted with the
-        # number of CPUs available to *this process* (respecting
-        # cgroup / SLURM affinity, not just the host total). Lets the
-        # same `ESPRESSO_COMMAND` work on an 8-core laptop and a
-        # 64-core node without re-editing — set e.g.
-        #     export ESPRESSO_COMMAND='/usr/bin/mpirun.openmpi -np {nproc} pw.x'
-        # and pw.x gets the right rank count on each machine.
-        cmd = extras.get("command", os.environ.get("ESPRESSO_COMMAND"))
-        if cmd and "{nproc}" in cmd:
-            cmd = cmd.replace("{nproc}", str(_detect_cpus()))
-        self.command = cmd
+        # If the user pinned a literal `-np N` in the command (no
+        # `{nproc}` token), it's left alone — explicit pin wins over
+        # auto-sizing.
+        self.command = extras.get("command", os.environ.get("ESPRESSO_COMMAND"))
+
+        # Optional global cap on MPI ranks per QE call. Useful on
+        # shared nodes where you don't want a single relax to grab the
+        # whole machine. None = no global cap (system-detect only).
+        self.max_processes: Optional[int] = extras.get("max_processes")
+        if self.max_processes is not None:
+            self.max_processes = int(self.max_processes)
 
         # Optional persistent log/work directory. When set (by the
         # populator), every QE call writes its input/output files to a
@@ -154,6 +157,52 @@ class QEBackend(QmBackend):
     # ------------------------------------------------------------------
     # ASE plumbing
     # ------------------------------------------------------------------
+
+    def _choose_procs(self, structure: StructureCfg) -> int:
+        """Pick the right MPI rank count for a single pw.x call.
+
+        Sizing knobs, in *most-specific-wins* order:
+
+        - `structure.qm_max_procs` (per-structure override) — set this
+          in the YAML on a small calibration cell that doesn't need
+          the whole node.
+        - `qm.max_processes` (global cap, set on the backend at init)
+          — for shared-node etiquette.
+        - System-detected `_detect_cpus()` — the hard upper bound.
+        - Size heuristic — `2 × n_atoms × n_kpts`. Rough rule of thumb
+          for QE plane-wave parallel: plane-wave parallelism scales
+          well up to a few ranks per atom, k-point pools multiply by
+          the k-point count, beyond that you mostly buy MPI comm
+          overhead. 2× is intentionally conservative — under-sizing
+          wastes wall-clock linearly; over-sizing wastes ranks
+          quadratically once you hit the comm-bound regime.
+
+        Returns at least 1 (the floor that makes the substituted
+        `-np 1` command still a valid invocation).
+        """
+        available = _detect_cpus()
+        n_atoms = len(structure.atoms) if structure.atoms is not None else 1
+        n_kpts = max(1, int(self.kpts[0]) * int(self.kpts[1]) * int(self.kpts[2]))
+        heuristic = max(2, 2 * n_atoms * n_kpts)
+
+        caps = [available, heuristic]
+        per_struct = (getattr(structure, "__pydantic_extra__", {}) or {}).get("qm_max_procs")
+        if per_struct is not None:
+            caps.append(int(per_struct))
+        if self.max_processes is not None:
+            caps.append(self.max_processes)
+        return max(1, min(caps))
+
+    def _resolve_command(self, structure: StructureCfg) -> str:
+        """Substitute `{nproc}` in the command template for this structure.
+
+        Falls back to plain `pw.x` if no command was configured at all
+        (single-rank serial run — works, just slow on PBC cells).
+        """
+        cmd = self.command or "pw.x"
+        if "{nproc}" in cmd:
+            cmd = cmd.replace("{nproc}", str(self._choose_procs(structure)))
+        return cmd
 
     def _effective_functional(self, structure: StructureCfg) -> str:
         """Honor per-structure `qm_functional` override (matches PySCF backend)."""
@@ -258,6 +307,7 @@ class QEBackend(QmBackend):
         *,
         relax_cell: bool = False,
         directory: Optional[str] = None,
+        structure: Optional[StructureCfg] = None,
     ):
         from ase.calculators.espresso import Espresso, EspressoProfile
         missing = self._missing_pseudos(atoms)
@@ -267,7 +317,16 @@ class QEBackend(QmBackend):
                 "Add them under qm.pseudopotentials in the YAML."
             )
         # ASE 3.23+ uses an EspressoProfile to bundle command + pseudo_dir.
-        cmd = self.command or "pw.x"
+        # Resolve `{nproc}` per-call using the structure size so a small
+        # cluster doesn't pay full-node MPI cost. If no structure was
+        # threaded through (test-mode shim), fall back to system-wide
+        # available cores so behavior is unchanged.
+        if structure is not None:
+            cmd = self._resolve_command(structure)
+        else:
+            cmd = self.command or "pw.x"
+            if "{nproc}" in cmd:
+                cmd = cmd.replace("{nproc}", str(_detect_cpus()))
         profile = EspressoProfile(command=cmd, pseudo_dir=self.pseudo_dir)
         kw = dict(
             profile=profile,
@@ -334,6 +393,7 @@ class QEBackend(QmBackend):
                 atoms,
                 functional=self._effective_functional(structure),
                 directory=str(workdir),
+                structure=structure,
             )
             e_ev = float(atoms.get_potential_energy())
             try:
@@ -377,6 +437,7 @@ class QEBackend(QmBackend):
                 atoms,
                 functional=self._effective_functional(structure),
                 directory=str(workdir),
+                structure=structure,
             )
             if constraint is not None:
                 self._apply_constraint(atoms, constraint)
@@ -475,6 +536,7 @@ class QEBackend(QmBackend):
                 functional=self._effective_functional(structure),
                 relax_cell=True,
                 directory=str(workdir),
+                structure=structure,
             )
             try:
                 e_ev = float(atoms.get_potential_energy())   # triggers pw.x; QE drives BFGS internally
